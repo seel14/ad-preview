@@ -27,7 +27,7 @@ function statusColor(status: string) {
   return "bg-gray-100 text-gray-600";
 }
 
-export default function SlideView({ ad, index }: { ad: AdData; index: number }) {
+export default function SlideView({ ad, index, exportMode = false }: { ad: AdData; index: number; exportMode?: boolean }) {
   const creative = ad.creative;
   const linkData = creative.object_story_spec?.link_data;
   const videoData = creative.object_story_spec?.video_data;
@@ -58,7 +58,7 @@ export default function SlideView({ ad, index }: { ad: AdData; index: number }) 
         className="relative bg-gray-100 flex-shrink-0 overflow-hidden"
         style={{ width: halfW, height: slideH }}
       >
-        {iframeSrc ? (
+        {iframeSrc && !exportMode ? (
           <iframe
             src={iframeSrc}
             width={halfW}

@@ -31,6 +31,7 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [exportMode, setExportMode] = useState(false);
   const slideRef = useRef<HTMLDivElement>(null);
 
   async function handleLoad() {
@@ -62,21 +63,23 @@ export default function Home() {
   async function handleExportPDF() {
     if (!ads.length) return;
     setExporting(true);
+    setExportMode(true);
     try {
       const { default: jsPDF } = await import("jspdf");
       const { default: html2canvas } = await import("html2canvas");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageW = 210;
-      const pageH = 297;
+      // A4 landscape
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageW = 297;
+      const pageH = 210;
 
       for (let i = 0; i < ads.length; i++) {
         setCurrentIndex(i);
         setStatus(`กำลัง render หน้า ${i + 1}/${ads.length}...`);
-        await new Promise(r => setTimeout(r, 700));
+        await new Promise(r => setTimeout(r, 800));
         const el = slideRef.current;
         if (!el) continue;
-        const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true });
-        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" });
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
         const imgH = (canvas.height / canvas.width) * pageW;
         const yOffset = Math.max(0, (pageH - imgH) / 2);
         if (i > 0) pdf.addPage();
@@ -90,6 +93,7 @@ export default function Home() {
       setStatus("❌ Export ล้มเหลว");
     } finally {
       setExporting(false);
+      setExportMode(false);
     }
   }
 
@@ -216,7 +220,7 @@ export default function Home() {
               </div>
 
               <div ref={slideRef}>
-                <SlideView ad={ads[currentIndex]} index={currentIndex} />
+                <SlideView ad={ads[currentIndex]} index={currentIndex} exportMode={exportMode} />
               </div>
 
               {status && <p className="mt-4 text-sm text-black">{status}</p>}

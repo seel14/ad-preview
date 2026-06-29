@@ -27,6 +27,10 @@ function statusColor(status: string) {
   return "bg-gray-100 text-gray-600";
 }
 
+function proxyUrl(url: string) {
+  return `/api/proxy?url=${encodeURIComponent(url)}`;
+}
+
 export default function SlideView({ ad, index, exportMode = false }: { ad: AdData; index: number; exportMode?: boolean }) {
   const creative = ad.creative;
   const linkData = creative.object_story_spec?.link_data;
@@ -34,8 +38,11 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
 
   const bodyText = linkData?.message ?? videoData?.message ?? creative.body ?? "";
   const headline = linkData?.name ?? videoData?.title ?? creative.title ?? "";
-  const imageUrl = linkData?.picture ?? videoData?.image_url ?? creative.image_url ?? creative.thumbnail_url ?? "";
+  const rawImageUrl = linkData?.picture ?? videoData?.image_url ?? creative.image_url ?? creative.thumbnail_url ?? "";
   const cta = creative.call_to_action_type?.replace(/_/g, " ") ?? "";
+
+  // In export mode, proxy the image so html2canvas can capture it (no CORS issue)
+  const imageUrl = exportMode && rawImageUrl ? proxyUrl(rawImageUrl) : rawImageUrl;
 
   const iframeSrc = (() => {
     if (!ad.previewHtml) return null;
@@ -43,21 +50,23 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
     return m ? m[1].replace(/&amp;/g, "&") : null;
   })();
 
-  // A4 landscape: 297×210 mm
+  // A4 landscape: 297×210 mm → 960×681px
   const slideW = 960;
   const slideH = Math.round(slideW * (210 / 297));
   const halfW = Math.round(slideW / 2);
 
+  // Header + footer heights (px)
+  const headerH = 56;
+  const footerH = headline || cta || ad.adset ? 56 : 0;
+  const bodyH = slideH - headerH - footerH;
+
   return (
     <div
       className="bg-white shadow-2xl flex flex-row"
-      style={{ width: slideW, height: slideH, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}
+      style={{ width: slideW, height: slideH, borderRadius: exportMode ? 0 : 8, overflow: "hidden", border: "1px solid #e5e7eb" }}
     >
       {/* Left: Ad visual */}
-      <div
-        className="relative bg-gray-100 flex-shrink-0 overflow-hidden"
-        style={{ width: halfW, height: slideH }}
-      >
+      <div className="relative bg-gray-100 flex-shrink-0 overflow-hidden" style={{ width: halfW, height: slideH }}>
         {iframeSrc && !exportMode ? (
           <iframe
             src={iframeSrc}
@@ -82,8 +91,6 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
             </svg>
           </div>
         )}
-
-        {/* Slide number badge */}
         <div className="absolute top-3 left-3 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full">
           {index + 1}
         </div>
@@ -93,9 +100,13 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
       <div className="w-px bg-gray-200 flex-shrink-0" />
 
       {/* Right: Caption */}
-      <div className="flex flex-col flex-1 overflow-hidden" style={{ height: slideH }}>
+      <div className="flex flex-col flex-1" style={{ height: slideH, overflow: "hidden" }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
+        <div
+          className="flex items-center justify-between px-6 border-b border-gray-100 flex-shrink-0"
+          style={{ height: headerH }}
+        >
           <div className="min-w-0 flex-1">
             <p className="text-xs text-gray-400 font-medium truncate">{ad.campaign}</p>
             <p className="text-sm font-bold text-black truncate">{ad.name}</p>
@@ -105,18 +116,34 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
           </span>
         </div>
 
-        {/* Caption body — scrollable so full text shows */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* Body: screen = scrollable, export = no scroll, auto font-size */}
+        <div
+          className="px-6 py-4"
+          style={{
+            height: bodyH,
+            overflowY: exportMode ? "hidden" : "auto",
+          }}
+        >
           {bodyText ? (
-            <p className="text-sm text-black leading-relaxed whitespace-pre-line">{bodyText}</p>
+            <p
+              className="text-black leading-relaxed whitespace-pre-line"
+              style={{
+                fontSize: exportMode ? clampFontSize(bodyText, bodyH) : 14,
+              }}
+            >
+              {bodyText}
+            </p>
           ) : (
             <p className="text-sm text-gray-300 italic">ไม่มี caption</p>
           )}
         </div>
 
-        {/* Footer: headline + CTA + adset */}
+        {/* Footer */}
         {(headline || cta || ad.adset) && (
-          <div className="border-t border-gray-100 px-6 py-3 flex-shrink-0 flex items-center justify-between gap-3">
+          <div
+            className="border-t border-gray-100 px-6 flex-shrink-0 flex items-center justify-between gap-3"
+            style={{ height: footerH }}
+          >
             <div className="min-w-0">
               {headline && <p className="text-sm font-semibold text-black truncate">{headline}</p>}
               {ad.adset && <p className="text-xs text-gray-400 truncate">{ad.adset}</p>}
@@ -131,4 +158,20 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
       </div>
     </div>
   );
+}
+
+// Estimate a font size so the text fits within the available pixel height
+function clampFontSize(text: string, containerH: number): number {
+  const lineHeight = 1.6;
+  const charsPerLine = 38; // approx at 13px in a ~440px wide column
+  const lines = text.split("\n").reduce((acc, line) => {
+    return acc + Math.max(1, Math.ceil(line.length / charsPerLine));
+  }, 0);
+
+  for (let size = 13; size >= 7; size--) {
+    const lineH = size * lineHeight;
+    const totalH = lines * lineH + 32; // 32 = py-4 padding
+    if (totalH <= containerH) return size;
+  }
+  return 7;
 }

@@ -89,9 +89,10 @@ export default function SlideView({ ad, index }: { ad: AdData; index: number }) 
                 <iframe
                   src={iframeSrc}
                   width="100%"
-                  height="700"
+                  height="960"
                   style={{ border: "none", borderRadius: 8 }}
-                  scrolling="no"
+                  scrolling="yes"
+                  allow="autoplay"
                 />
               ) : (
                 <div

@@ -19,14 +19,17 @@ export async function GET(req: Request) {
 
   if (ad.error) return NextResponse.json({ error: ad.error.message }, { status: 400 });
 
-  // get campaign and adset names
-  const [campaignRes, adsetRes] = await Promise.all([
+  // get campaign, adset names, and page info
+  const pageId = ad.creative?.object_story_spec?.page_id;
+  const [campaignRes, adsetRes, pageRes] = await Promise.all([
     ad.campaign_id ? fetch(`${BASE}/${ad.campaign_id}?fields=name&access_token=${token}`) : null,
     ad.adset_id ? fetch(`${BASE}/${ad.adset_id}?fields=name&access_token=${token}`) : null,
+    pageId ? fetch(`${BASE}/${pageId}?fields=name,picture{url}&access_token=${token}`) : null,
   ]);
 
   const campaign = campaignRes ? await campaignRes.json() : null;
   const adset = adsetRes ? await adsetRes.json() : null;
+  const page = pageRes ? await pageRes.json() : null;
 
   return NextResponse.json({
     id: ad.id,
@@ -36,5 +39,6 @@ export async function GET(req: Request) {
     adset: adset?.name ?? "",
     creative: ad.creative ?? {},
     previewHtml: preview.data?.[0]?.body ?? null,
+    page: page?.error ? null : { name: page?.name ?? "", picture: page?.picture?.data?.url ?? "" },
   });
 }

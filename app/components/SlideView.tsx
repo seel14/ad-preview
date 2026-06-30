@@ -18,6 +18,7 @@ interface AdData {
     };
   };
   previewHtml: string | null;
+  page?: { name: string; picture: string } | null;
 }
 
 function statusColor(status: string) {
@@ -41,7 +42,6 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
   const rawImageUrl = linkData?.picture ?? videoData?.image_url ?? creative.image_url ?? creative.thumbnail_url ?? "";
   const cta = creative.call_to_action_type?.replace(/_/g, " ") ?? "";
 
-  // In export mode, proxy the image so html2canvas can capture it (no CORS issue)
   const imageUrl = exportMode && rawImageUrl ? proxyUrl(rawImageUrl) : rawImageUrl;
 
   const iframeSrc = (() => {
@@ -50,24 +50,47 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
     return m ? m[1].replace(/&amp;/g, "&") : null;
   })();
 
-  // A4 landscape: 297×210 mm → 960×681px
   const slideW = 960;
   const slideH = Math.round(slideW * (210 / 297));
   const halfW = Math.round(slideW / 2);
 
-  // Header + footer heights (px)
   const headerH = 56;
   const footerH = headline || cta || ad.adset ? 56 : 0;
   const bodyH = slideH - headerH - footerH;
 
+  const pageName = ad.page?.name ?? "";
+  const pageImage = ad.page?.picture ? (exportMode ? proxyUrl(ad.page.picture) : ad.page.picture) : "";
+  const captionSnippet = bodyText.length > 120
+    ? bodyText.slice(0, 120).replace(/\n+$/, "")
+    : bodyText.split("\n").slice(0, 3).join("\n");
+
   return (
     <div
-      className="bg-white shadow-2xl flex flex-row"
-      style={{ width: slideW, height: slideH, borderRadius: exportMode ? 0 : 8, overflow: "hidden", border: "1px solid #e5e7eb" }}
+      style={{
+        width: slideW, height: slideH, display: "flex", flexDirection: "row",
+        background: "#fff", overflow: "hidden",
+        borderRadius: exportMode ? 0 : 8,
+        border: "1px solid #e5e7eb",
+        boxShadow: exportMode ? "none" : "0 25px 50px -12px rgba(0,0,0,0.25)",
+        fontFamily: "Helvetica, Arial, sans-serif",
+      }}
     >
-      {/* Left: Ad visual */}
-      <div className="relative bg-gray-100 flex-shrink-0 overflow-hidden" style={{ width: halfW, height: slideH }}>
-        {iframeSrc && !exportMode ? (
+      {/* Left: Ad visual — FB post card in export, iframe on screen */}
+      <div style={{ width: halfW, height: slideH, flexShrink: 0, overflow: "hidden", position: "relative", background: exportMode ? "#f0f2f5" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {exportMode ? (
+          <div style={{ width: 320, transform: "scale(0.92)", transformOrigin: "center center" }}>
+            <FbCard
+              pageName={pageName}
+              pageImage={pageImage}
+              caption={captionSnippet}
+              fullCaptionLength={bodyText.length}
+              imageUrl={imageUrl}
+              headline={headline}
+              cta={cta}
+              width={320}
+            />
+          </div>
+        ) : iframeSrc ? (
           <iframe
             src={iframeSrc}
             width={halfW}
@@ -78,78 +101,77 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
           />
         ) : imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt="creative"
-            className="w-full h-full object-cover"
-            crossOrigin="anonymous"
-          />
+          <img src={imageUrl} alt="creative" crossOrigin="anonymous"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6" }}>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
         )}
-        <div className="absolute top-3 left-3 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full">
+        {/* Slide number badge */}
+        <div style={{
+          position: "absolute", top: 12, left: 12, zIndex: 10,
+          background: "rgba(0,0,0,0.6)", color: "#fff",
+          fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
+        }}>
           {index + 1}
         </div>
       </div>
 
       {/* Divider */}
-      <div className="w-px bg-gray-200 flex-shrink-0" />
+      <div style={{ width: 1, background: "#e5e7eb", flexShrink: 0 }} />
 
       {/* Right: Caption */}
-      <div className="flex flex-col flex-1" style={{ height: slideH, overflow: "hidden" }}>
-
+      <div style={{ flex: 1, height: slideH, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 border-b border-gray-100 flex-shrink-0"
-          style={{ height: headerH }}
-        >
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-gray-400 font-medium truncate">{ad.campaign}</p>
-            <p className="text-sm font-bold text-black truncate">{ad.name}</p>
+        <div style={{
+          height: headerH, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 24px", borderBottom: "1px solid #f3f4f6", flexShrink: 0,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#000", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{ad.name}</p>
           </div>
-          <span className={`ml-3 flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor(ad.status)}`}>
+          <span style={{
+            marginLeft: 12, flexShrink: 0, fontSize: 11, fontWeight: 600,
+            padding: "2px 8px", borderRadius: 9999,
+            background: ad.status === "ACTIVE" ? "#dcfce7" : ad.status === "PAUSED" ? "#fef9c3" : "#f3f4f6",
+            color: ad.status === "ACTIVE" ? "#15803d" : ad.status === "PAUSED" ? "#a16207" : "#4b5563",
+          }}>
             {ad.status}
           </span>
         </div>
 
-        {/* Body: screen = scrollable, export = no scroll, auto font-size */}
-        <div
-          className="px-6 py-4"
-          style={{
-            height: bodyH,
-            overflowY: exportMode ? "hidden" : "auto",
-          }}
-        >
+        {/* Body */}
+        <div style={{
+          height: bodyH, padding: "16px 24px",
+          overflowY: exportMode ? "hidden" : "auto",
+        }}>
           {bodyText ? (
-            <p
-              className="text-black leading-relaxed whitespace-pre-line"
-              style={{
-                fontSize: exportMode ? clampFontSize(bodyText, bodyH) : 14,
-              }}
-            >
+            <p style={{
+              color: "#000", lineHeight: 1.6, whiteSpace: "pre-line", margin: 0,
+              fontSize: exportMode ? clampFontSize(bodyText, bodyH) : 14,
+            }}>
               {bodyText}
             </p>
           ) : (
-            <p className="text-sm text-gray-300 italic">ไม่มี caption</p>
+            <p style={{ fontSize: 13, color: "#d1d5db", fontStyle: "italic", margin: 0 }}>ไม่มี caption</p>
           )}
         </div>
 
         {/* Footer */}
         {(headline || cta || ad.adset) && (
-          <div
-            className="border-t border-gray-100 px-6 flex-shrink-0 flex items-center justify-between gap-3"
-            style={{ height: footerH }}
-          >
-            <div className="min-w-0">
-              {headline && <p className="text-sm font-semibold text-black truncate">{headline}</p>}
-              {ad.adset && <p className="text-xs text-gray-400 truncate">{ad.adset}</p>}
+          <div style={{
+            height: footerH, borderTop: "1px solid #f3f4f6", padding: "0 24px",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              {headline && <p style={{ fontSize: 13, fontWeight: 600, color: "#000", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{headline}</p>}
+              {ad.adset && <p style={{ fontSize: 11, color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{ad.adset}</p>}
             </div>
             {cta && (
-              <div className="flex-shrink-0 bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded whitespace-nowrap">
+              <div style={{ flexShrink: 0, background: "#2563eb", color: "#fff", fontSize: 11, fontWeight: 600, padding: "6px 12px", borderRadius: 4, whiteSpace: "nowrap" }}>
                 {cta}
               </div>
             )}
@@ -160,17 +182,122 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
   );
 }
 
-// Estimate a font size so the text fits within the available pixel height
+/* Facebook mobile feed card — used only in export mode */
+function FbCard({ pageName, pageImage, caption, fullCaptionLength, imageUrl, headline, cta, width }: {
+  pageName: string; pageImage: string; caption: string; fullCaptionLength: number;
+  imageUrl: string; headline: string; cta: string; width: number;
+}) {
+
+  const ctaLabel = cta
+    ? cta.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")
+    : "";
+
+  return (
+    <div style={{ width, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", fontFamily: "Helvetica, Arial, sans-serif", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
+      {/* Page header */}
+      <div style={{ height: 52, display: "flex", alignItems: "center", padding: "0 14px", gap: 10 }}>
+        {pageImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={pageImage} alt="" crossOrigin="anonymous"
+            style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid #e4e6eb" }} />
+        ) : (
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e4e6eb" }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#050505", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {pageName || "Page"}
+          </div>
+          <div style={{ fontSize: 11, color: "#65676b", lineHeight: 1.2 }}>
+            Sponsored · <span style={{ fontSize: 10 }}>🌐</span>
+          </div>
+        </div>
+        {/* 3-dot + close */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#65676b" }}>
+          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>···</span>
+          <span style={{ fontSize: 18, fontWeight: 300 }}>✕</span>
+        </div>
+      </div>
+
+      {/* Caption snippet */}
+      {caption && (
+        <div style={{ padding: "0 14px 8px", fontSize: 13, color: "#050505", lineHeight: 1.4 }}>
+          <span style={{ whiteSpace: "pre-line" }}>{caption}</span>
+          {fullCaptionLength > 120 && (
+            <span style={{ color: "#65676b", fontSize: 13 }}> ...see more</span>
+          )}
+        </div>
+      )}
+
+      {/* Ad image */}
+      <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f0f2f5", flexShrink: 0 }}>
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" crossOrigin="anonymous"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 12 }}>
+            No image
+          </div>
+        )}
+      </div>
+
+      {/* CTA bar (headline + button) */}
+      {(headline || cta) && (
+        <div style={{
+          height: 48, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 14px", background: "#f0f2f5", borderTop: "1px solid #e4e6eb",
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: "#65676b", textTransform: "uppercase", letterSpacing: 0.3 }}>FORM</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#050505", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {headline}
+            </div>
+          </div>
+          {ctaLabel && (
+            <div style={{
+              marginLeft: 10, background: "#e4e6eb", color: "#050505",
+              fontSize: 13, fontWeight: 700, padding: "7px 16px", borderRadius: 6,
+              whiteSpace: "nowrap", border: "1px solid #ccd0d5",
+            }}>
+              {ctaLabel}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Like / Comment actions */}
+      <div style={{
+        height: 40, display: "flex", alignItems: "center",
+        borderTop: "1px solid #e4e6eb", padding: "0 14px",
+      }}>
+        <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#65676b" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#65676b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 9V5a3 3 0 00-6 0v4H5a2 2 0 00-2 2v1.2l1.8 7.2a1 1 0 001 .6H15" />
+            <path d="M18 9h3a1 1 0 011 1v8a1 1 0 01-1 1h-3V9z" />
+          </svg>
+          Like
+        </div>
+        <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#65676b" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#65676b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+          </svg>
+          Comment
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function clampFontSize(text: string, containerH: number): number {
   const lineHeight = 1.6;
-  const charsPerLine = 38; // approx at 13px in a ~440px wide column
+  const charsPerLine = 38;
   const lines = text.split("\n").reduce((acc, line) => {
     return acc + Math.max(1, Math.ceil(line.length / charsPerLine));
   }, 0);
 
   for (let size = 13; size >= 7; size--) {
     const lineH = size * lineHeight;
-    const totalH = lines * lineH + 32; // 32 = py-4 padding
+    const totalH = lines * lineH + 32;
     if (totalH <= containerH) return size;
   }
   return 7;

@@ -19,6 +19,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.name !== undefined) projects[idx].name = body.name;
   if (body.token !== undefined) projects[idx].token = body.token;
   if (body.adIds !== undefined) projects[idx].adIds = body.adIds;
+  if (body.savedLists !== undefined) projects[idx].savedLists = body.savedLists;
+  if (body.structure !== undefined) projects[idx].structure = body.structure;
   projects[idx].updatedAt = Date.now();
 
   await saveProjects(session.user.id, projects);

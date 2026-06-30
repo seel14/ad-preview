@@ -6,11 +6,29 @@ const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TO
 
 export const redis = url && token ? new Redis({ url, token }) : null;
 
+export interface SavedList {
+  id: string;
+  name: string;
+  adIds: string[];
+  createdAt: number;
+}
+
+export interface StructureNode {
+  id: string;
+  type: "platform" | "campaign" | "adset" | "ad";
+  name: string;
+  color?: string;
+  meta?: Record<string, string>;
+  children: StructureNode[];
+}
+
 export interface Project {
   id: string;
   name: string;
   token: string;
   adIds: string[];
+  savedLists?: SavedList[];
+  structure?: StructureNode[];
   createdAt: number;
   updatedAt: number;
 }

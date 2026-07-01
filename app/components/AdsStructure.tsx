@@ -195,6 +195,38 @@ function BudgetRow({ meta, onUpdate, textColor }: {
   );
 }
 
+// ── Thumbnail strip (shows inside Campaign/AdSet nodes) ────────────────────────
+function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
+  if (thumbs.length === 0) return null;
+  const show = thumbs.slice(0, 5);
+  const extra = total - show.length;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginTop: 6, gap: 0 }}>
+      {show.map((src, i) => (
+        <div key={i} style={{
+          width: 22, height: 22, borderRadius: "50%", overflow: "hidden",
+          border: "2px solid rgba(255,255,255,0.8)",
+          marginLeft: i === 0 ? 0 : -6,
+          background: "#e5e7eb", flexShrink: 0,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+        }}>
+          <img src={src} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
+      ))}
+      {extra > 0 && (
+        <div style={{
+          width: 22, height: 22, borderRadius: "50%",
+          border: "2px solid rgba(255,255,255,0.8)",
+          marginLeft: -6, background: "rgba(0,0,0,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0,
+        }}>+{extra}</div>
+      )}
+      <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.75 }}>{total} Ad{total !== 1 ? "s" : ""}</span>
+    </div>
+  );
+}
+
 // ── Node box ───────────────────────────────────────────────────────────────────
 function NodeBox({ label, bg, textColor, sublabel, onLabelSave, onRemove, children, isOver, isDraggingThis }: {
   label: string; bg: string; textColor: string; sublabel?: React.ReactNode;
@@ -334,7 +366,10 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggi
       <NodeBox label={node.name} bg={theme.adset} textColor={theme.adsetText}
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
         isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />}>
+        sublabel={<>
+          <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />
+          <ThumbStrip thumbs={ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)} total={ads.length} />
+        </>}>
         <AddAdButton existingAdIds={existingAdIds} loadedAds={loadedAds} onAdd={addAd} />
       </NodeBox>
       {ads.length > 0 && (
@@ -383,7 +418,14 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDra
       <NodeBox label={node.name} bg={theme.campaign} textColor="#fff"
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
         isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />}>
+        sublabel={(() => {
+          const allAds = [...adsets.flatMap(s => s.children.filter(c => c.type === "ad")), ...sharedAds];
+          const thumbs = allAds.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
+          return <>
+            <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />
+            <ThumbStrip thumbs={thumbs} total={allAds.length} />
+          </>;
+        })()}>
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <button onClick={addAdset} style={{ fontSize: 10, color: "#6b7280", background: "#f3f4f6", border: "1px dashed #d1d5db", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>+ Ad Set</button>
           <AddAdButton existingAdIds={existingSharedIds} loadedAds={loadedAds} onAdd={addSharedAd} label="+ Shared Ad" />

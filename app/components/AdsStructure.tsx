@@ -197,32 +197,40 @@ function BudgetRow({ meta, onUpdate, textColor }: {
 
 // ── Thumbnail strip (shows inside Campaign/AdSet nodes) ────────────────────────
 function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
-  if (thumbs.length === 0) return null;
+  if (total === 0) return null;
   const show = thumbs.slice(0, 5);
   const extra = total - show.length;
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginTop: 6, gap: 0 }}>
-      {show.map((src, i) => (
-        <div key={i} style={{
-          width: 22, height: 22, borderRadius: "50%", overflow: "hidden",
-          border: "2px solid rgba(255,255,255,0.8)",
-          marginLeft: i === 0 ? 0 : -6,
-          background: "#e5e7eb", flexShrink: 0,
-          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-        }}>
-          <img src={src} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-        </div>
-      ))}
-      {extra > 0 && (
-        <div style={{
-          width: 22, height: 22, borderRadius: "50%",
-          border: "2px solid rgba(255,255,255,0.8)",
-          marginLeft: -6, background: "rgba(0,0,0,0.3)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0,
-        }}>+{extra}</div>
+      {show.length > 0 ? (
+        <>
+          {show.map((src, i) => (
+            <div key={i} style={{
+              width: 22, height: 22, borderRadius: "50%", overflow: "hidden",
+              border: "2px solid rgba(255,255,255,0.8)",
+              marginLeft: i === 0 ? 0 : -6,
+              background: "#e5e7eb", flexShrink: 0,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            }}>
+              <img src={src} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </div>
+          ))}
+          {extra > 0 && (
+            <div style={{
+              width: 22, height: 22, borderRadius: "50%",
+              border: "2px solid rgba(255,255,255,0.8)",
+              marginLeft: -6, background: "rgba(0,0,0,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0,
+            }}>+{extra}</div>
+          )}
+          <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.75 }}>{total} Ad{total !== 1 ? "s" : ""}</span>
+        </>
+      ) : (
+        <span style={{ fontSize: 10, opacity: 0.6, background: "rgba(255,255,255,0.25)", borderRadius: 10, padding: "1px 8px" }}>
+          {total} Ad{total !== 1 ? "s" : ""}
+        </span>
       )}
-      <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.75 }}>{total} Ad{total !== 1 ? "s" : ""}</span>
     </div>
   );
 }

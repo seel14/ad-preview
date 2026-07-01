@@ -374,12 +374,10 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggi
       <NodeBox label={node.name} bg={theme.adset} textColor={theme.adsetText}
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
         isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={<>
-          <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />
-          <ThumbStrip thumbs={ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)} total={ads.length} />
-        </>}>
+        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />}>
         <AddAdButton existingAdIds={existingAdIds} loadedAds={loadedAds} onAdd={addAd} />
       </NodeBox>
+      <ThumbStrip thumbs={ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)} total={ads.length} />
       {ads.length > 0 && (
         <>
           <VertBar />
@@ -426,19 +424,16 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDra
       <NodeBox label={node.name} bg={theme.campaign} textColor="#fff"
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
         isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={(() => {
-          const allAds = [...adsets.flatMap(s => s.children.filter(c => c.type === "ad")), ...sharedAds];
-          const thumbs = allAds.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
-          return <>
-            <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />
-            <ThumbStrip thumbs={thumbs} total={allAds.length} />
-          </>;
-        })()}>
+        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />}>
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <button onClick={addAdset} style={{ fontSize: 10, color: "#6b7280", background: "#f3f4f6", border: "1px dashed #d1d5db", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>+ Ad Set</button>
           <AddAdButton existingAdIds={existingSharedIds} loadedAds={loadedAds} onAdd={addSharedAd} label="+ Shared Ad" />
         </div>
       </NodeBox>
+      <ThumbStrip
+        thumbs={[...adsets.flatMap(s => s.children.filter(c => c.type === "ad")), ...sharedAds].map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)}
+        total={adsets.flatMap(s => s.children.filter(c => c.type === "ad")).length + sharedAds.length}
+      />
 
       {adsets.length > 0 && (
         <>

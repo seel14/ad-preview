@@ -6,7 +6,9 @@ export async function GET(req: Request) {
   if (!url) return NextResponse.json({ error: "url required" }, { status: 400 });
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" },
+    });
     const buffer = await res.arrayBuffer();
     const contentType = res.headers.get("content-type") ?? "image/jpeg";
     return new NextResponse(buffer, {

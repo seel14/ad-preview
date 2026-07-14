@@ -1,5 +1,14 @@
 "use client";
 
+import { normalizeCreative } from "@/lib/normalizeCreative";
+
+interface ChildAttachment {
+  picture?: string;
+  link?: string;
+  name?: string;
+  description?: string;
+}
+
 interface AdData {
   id: string;
   name: string;
@@ -13,7 +22,14 @@ interface AdData {
     thumbnail_url?: string;
     call_to_action_type?: string;
     object_story_spec?: {
-      link_data?: { message?: string; name?: string; description?: string; picture?: string; link?: string };
+      link_data?: {
+        message?: string;
+        name?: string;
+        description?: string;
+        picture?: string;
+        link?: string;
+        child_attachments?: ChildAttachment[];
+      };
       video_data?: { message?: string; title?: string; image_url?: string };
     };
   };
@@ -32,15 +48,10 @@ function proxyUrl(url: string) {
   return `/api/proxy?url=${encodeURIComponent(url)}`;
 }
 
-export default function SlideView({ ad, index, exportMode = false }: { ad: AdData; index: number; exportMode?: boolean }) {
+export default function SlideView({ ad, index, exportMode = false, albumImages }: { ad: AdData; index: number; exportMode?: boolean; albumImages?: string[] }) {
   const creative = ad.creative;
   const linkData = creative.object_story_spec?.link_data;
-  const videoData = creative.object_story_spec?.video_data;
-
-  const bodyText = linkData?.message ?? videoData?.message ?? creative.body ?? "";
-  const headline = linkData?.name ?? videoData?.title ?? creative.title ?? "";
-  const rawImageUrl = linkData?.picture ?? videoData?.image_url ?? creative.image_url ?? creative.thumbnail_url ?? "";
-  const cta = creative.call_to_action_type?.replace(/_/g, " ") ?? "";
+  const { body: bodyText, headline, image: rawImageUrl, cta } = normalizeCreative(creative);
 
   const imageUrl = exportMode && rawImageUrl ? proxyUrl(rawImageUrl) : rawImageUrl;
 
@@ -84,7 +95,17 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
               pageImage={pageImage}
               caption={captionSnippet}
               fullCaptionLength={bodyText.length}
-              imageUrl={imageUrl}
+              imageUrl={
+                albumImages?.length === 1
+                  ? (exportMode ? proxyUrl(albumImages[0]) : albumImages[0])
+                  : imageUrl
+              }
+              childAttachments={
+                albumImages && albumImages.length >= 2
+                  ? albumImages.map(src => ({ picture: exportMode ? proxyUrl(src) : src }))
+                  : linkData?.child_attachments
+              }
+              isAlbumFallback={albumImages?.length === 1}
               headline={headline}
               cta={cta}
               width={320}
@@ -182,15 +203,51 @@ export default function SlideView({ ad, index, exportMode = false }: { ad: AdDat
   );
 }
 
-/* Facebook mobile feed card — used only in export mode */
-function FbCard({ pageName, pageImage, caption, fullCaptionLength, imageUrl, headline, cta, width }: {
-  pageName: string; pageImage: string; caption: string; fullCaptionLength: number;
-  imageUrl: string; headline: string; cta: string; width: number;
-}) {
+/* Album grid — replicates Facebook's 2×2 photo mosaic */
+function AlbumGrid({ images, width }: { images: string[]; width: number }) {
+  const size = width; // square grid same as card width
+  const cellSize = size / 2;
+  // Show max 4 cells; last cell gets "+N" overlay if more
+  const show = images.slice(0, 4);
+  const extra = images.length - 4;
 
+  return (
+    <div style={{ width: size, height: size, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, background: "#e4e6eb", flexShrink: 0 }}>
+      {show.map((src, i) => {
+        const isLast = i === show.length - 1 && extra > 0;
+        return (
+          <div key={i} style={{ position: "relative", width: cellSize - 1, height: cellSize - 1, overflow: "hidden", background: "#f0f2f5" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={src} alt="" crossOrigin="anonymous"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            {isLast && (
+              <div style={{
+                position: "absolute", inset: 0,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 28, fontWeight: 700, color: "#fff",
+              }}>
+                +{extra}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Facebook mobile feed card — used only in export mode */
+function FbCard({ pageName, pageImage, caption, fullCaptionLength, imageUrl, childAttachments, isAlbumFallback, headline, cta, width }: {
+  pageName: string; pageImage: string; caption: string; fullCaptionLength: number;
+  imageUrl: string; childAttachments?: ChildAttachment[]; isAlbumFallback?: boolean; headline: string; cta: string; width: number;
+}) {
   const ctaLabel = cta
     ? cta.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")
     : "";
+
+  const albumImages = (childAttachments ?? []).map(a => a.picture).filter(Boolean) as string[];
+  const isAlbum = albumImages.length >= 2;
 
   return (
     <div style={{ width, display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden", fontFamily: "Helvetica, Arial, sans-serif", borderRadius: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
@@ -211,7 +268,6 @@ function FbCard({ pageName, pageImage, caption, fullCaptionLength, imageUrl, hea
             Sponsored · <span style={{ fontSize: 10 }}>🌐</span>
           </div>
         </div>
-        {/* 3-dot + close */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#65676b" }}>
           <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>···</span>
           <span style={{ fontSize: 18, fontWeight: 300 }}>✕</span>
@@ -228,18 +284,34 @@ function FbCard({ pageName, pageImage, caption, fullCaptionLength, imageUrl, hea
         </div>
       )}
 
-      {/* Ad image */}
-      <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f0f2f5", flexShrink: 0 }}>
-        {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt="" crossOrigin="anonymous"
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 12 }}>
-            No image
+      {/* Ad image — album grid, single, or album placeholder */}
+      {isAlbum ? (
+        <AlbumGrid images={albumImages} width={width} />
+      ) : isAlbumFallback ? (
+        /* Album post: full image not available without pages_read_engagement — show clean placeholder */
+        <div style={{ aspectRatio: "1/1", background: "#e4e6eb", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#90949c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <div style={{ fontSize: 11, color: "#65676b", fontWeight: 600, letterSpacing: 0.2 }}>ALBUM POST</div>
+          <div style={{ fontSize: 10, color: "#90949c", textAlign: "center", maxWidth: 160, lineHeight: 1.4 }}>
+            รูปภาพ album ไม่สามารถแสดงได้<br/>ในโหมด export
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f0f2f5", flexShrink: 0 }}>
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" crossOrigin="anonymous"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 12 }}>
+              No image
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CTA bar (headline + button) */}
       {(headline || cta) && (

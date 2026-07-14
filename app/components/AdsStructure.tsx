@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, createContext, useContext } from "react";
+import { normalizeCreative } from "@/lib/normalizeCreative";
 
 const ExportCtx = createContext(false);
 
@@ -10,6 +11,17 @@ export interface StructureNode {
   name: string;
   meta?: Record<string, string>;
   children: StructureNode[];
+}
+
+// A Campaign's `children` mixes two kinds of node: `adset`-typed (its ad sets) and
+// `ad`-typed (ads shared across all ad sets, added directly under the campaign). Every
+// place that reads a Campaign's children needs both halves — this is the one place
+// that splits them, instead of each caller re-deriving the same two filters.
+function splitCampaignChildren(children: StructureNode[]): { adsets: StructureNode[]; sharedAds: StructureNode[] } {
+  return {
+    adsets: children.filter(c => c.type === "adset"),
+    sharedAds: children.filter(c => c.type === "ad"),
+  };
 }
 
 interface AdData {
@@ -37,9 +49,7 @@ const LINE_COLOR = "#d1d5db";
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
 function getThumb(ad: AdData): string {
-  const ld = ad.creative.object_story_spec?.link_data;
-  const vd = ad.creative.object_story_spec?.video_data;
-  return ld?.picture ?? vd?.image_url ?? ad.creative.image_url ?? ad.creative.thumbnail_url ?? "";
+  return normalizeCreative(ad.creative).image;
 }
 
 // ── Drag state (global within component tree) ─────────────────────────────────
@@ -51,14 +61,15 @@ interface DragCtxType {
 }
 const DragCtx = createContext<DragCtxType>({ dragId: null, overId: null, setDragId: () => {}, setOverId: () => {} });
 
-// ── useSortList — helper for drag-sortable lists ───────────────────────────────
+// ── useDragSort — returns containerProps (drag source) + dropProps (drop target) ─
 function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) => void) {
   const { dragId, overId, setDragId, setOverId } = useContext(DragCtx);
   const exporting = useContext(ExportCtx);
 
   function dragProps(item: StructureNode) {
-    if (exporting) return {};
-    return {
+    if (exporting) return { containerProps: {}, dropProps: {} };
+
+    const containerProps = {
       draggable: true as const,
       onDragStart: (e: React.DragEvent) => {
         e.stopPropagation();
@@ -67,6 +78,9 @@ function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) 
         setDragId(item.id);
       },
       onDragEnd: () => { setDragId(null); setOverId(null); },
+    };
+
+    const dropProps = {
       onDragOver: (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -75,6 +89,8 @@ function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) 
       },
       onDragLeave: (e: React.DragEvent) => {
         e.stopPropagation();
+        // Only clear if mouse truly left this element (not just moved to a child)
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
         setOverId(null);
       },
       onDrop: (e: React.DragEvent) => {
@@ -93,6 +109,8 @@ function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) 
         setOverId(null);
       },
     };
+
+    return { containerProps, dropProps };
   }
 
   return { dragProps, isDragging: (id: string) => dragId === id, isOver: (id: string) => overId === id && dragId !== id };
@@ -236,15 +254,16 @@ function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
 }
 
 // ── Node box ───────────────────────────────────────────────────────────────────
-function NodeBox({ label, bg, textColor, sublabel, onLabelSave, onRemove, children, isOver, isDraggingThis }: {
+function NodeBox({ label, bg, textColor, sublabel, onLabelSave, onRemove, children, isOver, isDraggingThis, dropProps }: {
   label: string; bg: string; textColor: string; sublabel?: React.ReactNode;
   onLabelSave: (v: string) => void; onRemove: () => void; children?: React.ReactNode;
   isOver?: boolean; isDraggingThis?: boolean;
+  dropProps?: React.HTMLAttributes<HTMLDivElement>;
 }) {
   const exporting = useContext(ExportCtx);
   return (
     <div style={{ position: "relative", display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{
+      <div {...dropProps} style={{
         background: bg, color: textColor, padding: "10px 18px", borderRadius: 10,
         fontWeight: 700, fontSize: 13, textAlign: "center", minWidth: 150,
         boxShadow: isOver ? "0 0 0 3px #3b82f6, 0 4px 16px rgba(0,0,0,0.2)" : "0 2px 8px rgba(0,0,0,0.15)",
@@ -314,17 +333,19 @@ function AddAdButton({ existingAdIds, loadedAds, onAdd, label = "+ Ad" }: {
 }
 
 // ── Ad card ────────────────────────────────────────────────────────────────────
-function AdCard({ node, onRemove, dragP, isDraggingThis, isOver }: {
+function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isOver }: {
   node: StructureNode; onRemove: () => void;
-  dragP: Record<string, unknown>; isDraggingThis: boolean; isOver: boolean;
+  containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  dropProps: React.HTMLAttributes<HTMLDivElement>;
+  isDraggingThis: boolean; isOver: boolean;
 }) {
   const exporting = useContext(ExportCtx);
   const thumb = node.meta?.thumbnailUrl ?? "";
   return (
-    <div {...dragP} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
+    <div {...containerProps} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
       {!exporting && <GrabBar label="ลาก Ad" color="#9ca3af" bg="#f3f4f6" />}
       <div style={{ position: "relative", width: 90 }}>
-        <div style={{
+        <div {...dropProps} style={{
           background: "#fff", border: isOver ? "2px solid #3b82f6" : "1px solid #e5e7eb",
           borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
           transition: "border 0.15s",
@@ -353,10 +374,12 @@ function AdCard({ node, onRemove, dragP, isDraggingThis, isOver }: {
 }
 
 // ── Adset node ─────────────────────────────────────────────────────────────────
-function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggingThis, isOver }: {
+function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver }: {
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
-  dragP: Record<string, unknown>; isDraggingThis: boolean; isOver: boolean;
+  containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  dropProps: React.HTMLAttributes<HTMLDivElement>;
+  isDraggingThis: boolean; isOver: boolean;
 }) {
   const ads = node.children;
   const existingAdIds = new Set(ads.map(a => a.meta?.adId ?? "").filter(Boolean));
@@ -368,25 +391,46 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggi
     onUpdate({ children: [...ads, { id: uid(), type: "ad", name: ad.name, meta: { adId: ad.id, thumbnailUrl: getThumb(ad) }, children: [] }] });
   }
 
+  const adThumbs = ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
+
   return (
-    <div {...dragP} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
+    <div {...containerProps} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
       <GrabBar label="ลาก Ad Set" color={theme.adsetText} bg={theme.adset} />
       <NodeBox label={node.name} bg={theme.adset} textColor={theme.adsetText}
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
-        isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />}>
+        isOver={isOver} isDraggingThis={isDraggingThis} dropProps={dropProps}
+        sublabel={
+          <>
+            <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />
+            <ThumbStrip thumbs={adThumbs} total={ads.length} />
+          </>
+        }>
         <AddAdButton existingAdIds={existingAdIds} loadedAds={loadedAds} onAdd={addAd} />
       </NodeBox>
-      <ThumbStrip thumbs={ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)} total={ads.length} />
       {ads.length > 0 && (
         <>
           <VertBar />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: 360 }}>
-            {ads.map(ad => (
-              <AdCard key={ad.id} node={ad}
-                onRemove={() => onUpdate({ children: ads.filter(a => a.id !== ad.id) })}
-                dragP={adDragProps(ad)} isDraggingThis={adIsDragging(ad.id)} isOver={adIsOver(ad.id)} />
-            ))}
+          <div style={{
+            border: `2px solid ${theme.adset}`,
+            borderRadius: 10,
+            background: `${theme.adset}44`,
+            padding: "10px 12px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 0,
+          }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, ads.length)}, 90px)`, gap: 8, justifyContent: "center" }}>
+              {ads.map(ad => {
+                const { containerProps: adCP, dropProps: adDP } = adDragProps(ad);
+                return (
+                  <AdCard key={ad.id} node={ad}
+                    onRemove={() => onUpdate({ children: ads.filter(a => a.id !== ad.id) })}
+                    containerProps={adCP} dropProps={adDP}
+                    isDraggingThis={adIsDragging(ad.id)} isOver={adIsOver(ad.id)} />
+                );
+              })}
+            </div>
           </div>
         </>
       )}
@@ -395,13 +439,14 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggi
 }
 
 // ── Campaign node ──────────────────────────────────────────────────────────────
-function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDraggingThis, isOver }: {
+function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver }: {
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
-  dragP: Record<string, unknown>; isDraggingThis: boolean; isOver: boolean;
+  containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  dropProps: React.HTMLAttributes<HTMLDivElement>;
+  isDraggingThis: boolean; isOver: boolean;
 }) {
-  const adsets = node.children.filter(c => c.type === "adset");
-  const sharedAds = node.children.filter(c => c.type === "ad");
+  const { adsets, sharedAds } = splitCampaignChildren(node.children);
   const existingSharedIds = new Set(sharedAds.map(a => a.meta?.adId ?? "").filter(Boolean));
   const { dragProps: adsetDragProps, isDragging: adsetIsDragging, isOver: adsetIsOver } = useDragSort(adsets,
     next => onUpdate({ children: [...next, ...sharedAds] })
@@ -418,37 +463,47 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDra
     onUpdate({ children: [...node.children, { id: uid(), type: "ad", name: ad.name, meta: { adId: ad.id, thumbnailUrl: getThumb(ad) }, children: [] }] });
   }
 
+  // Adset children are always ad-typed (no overloading at that level), unlike Campaign's.
+  const allAdNodes = [...adsets.flatMap(s => s.children), ...sharedAds];
+  const campThumbs = allAdNodes.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
+  const campTotal = allAdNodes.length;
+
   return (
-    <div {...dragP} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
+    <div {...containerProps} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
       <GrabBar label="ลาก Campaign" color="#3b82f6" bg="#eff6ff" />
       <NodeBox label={node.name} bg={theme.campaign} textColor="#fff"
         onLabelSave={v => onUpdate({ name: v })} onRemove={onRemove}
-        isOver={isOver} isDraggingThis={isDraggingThis}
-        sublabel={<BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />}>
+        isOver={isOver} isDraggingThis={isDraggingThis} dropProps={dropProps}
+        sublabel={
+          <>
+            <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />
+            <ThumbStrip thumbs={campThumbs} total={campTotal} />
+          </>
+        }>
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <button onClick={addAdset} style={{ fontSize: 10, color: "#6b7280", background: "#f3f4f6", border: "1px dashed #d1d5db", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>+ Ad Set</button>
           <AddAdButton existingAdIds={existingSharedIds} loadedAds={loadedAds} onAdd={addSharedAd} label="+ Shared Ad" />
         </div>
       </NodeBox>
-      <ThumbStrip
-        thumbs={[...adsets.flatMap(s => s.children.filter(c => c.type === "ad")), ...sharedAds].map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean)}
-        total={adsets.flatMap(s => s.children.filter(c => c.type === "ad")).length + sharedAds.length}
-      />
 
       {adsets.length > 0 && (
         <>
           <VertBar />
           <div style={{ display: "flex" }}>
-            {adsets.map((adset, i) => (
-              <div key={adset.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <ChildConnector isFirst={i === 0} isLast={i === adsets.length - 1} single={adsets.length === 1} />
-                <div style={{ paddingLeft: 8, paddingRight: 8 }}>
-                  <AdsetNode node={adset} theme={theme} loadedAds={loadedAds}
-                    onUpdate={p => updateChild(adset.id, p)} onRemove={() => removeChild(adset.id)}
-                    dragP={adsetDragProps(adset)} isDraggingThis={adsetIsDragging(adset.id)} isOver={adsetIsOver(adset.id)} />
+            {adsets.map((adset, i) => {
+              const { containerProps: asCP, dropProps: asDP } = adsetDragProps(adset);
+              return (
+                <div key={adset.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <ChildConnector isFirst={i === 0} isLast={i === adsets.length - 1} single={adsets.length === 1} />
+                  <div style={{ paddingLeft: 8, paddingRight: 8 }}>
+                    <AdsetNode node={adset} theme={theme} loadedAds={loadedAds}
+                      onUpdate={p => updateChild(adset.id, p)} onRemove={() => removeChild(adset.id)}
+                      containerProps={asCP} dropProps={asDP}
+                      isDraggingThis={adsetIsDragging(adset.id)} isOver={adsetIsOver(adset.id)} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -458,8 +513,8 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, dragP, isDra
           <VertBar />
           <div style={{ padding: "8px 16px", background: "#fefce8", border: "1px dashed #fbbf24", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
             <div style={{ fontSize: 10, color: "#92400e", fontWeight: 600 }}>Shared Ads (ทุก Ad Set)</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-              {sharedAds.map(ad => <AdCard key={ad.id} node={ad} onRemove={() => removeChild(ad.id)} dragP={{}} isDraggingThis={false} isOver={false} />)}
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, sharedAds.length)}, 90px)`, gap: 8, justifyContent: "center" }}>
+              {sharedAds.map(ad => <AdCard key={ad.id} node={ad} onRemove={() => removeChild(ad.id)} containerProps={{}} dropProps={{}} isDraggingThis={false} isOver={false} />)}
             </div>
           </div>
         </>
@@ -512,16 +567,20 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
         <>
           <VertBar />
           <div style={{ display: "flex" }}>
-            {campaigns.map((campaign, i) => (
-              <div key={campaign.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <ChildConnector isFirst={i === 0} isLast={i === campaigns.length - 1} single={campaigns.length === 1} />
-                <div style={{ paddingLeft: 12, paddingRight: 12 }}>
-                  <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds}
-                    onUpdate={p => updateChild(campaign.id, p)} onRemove={() => removeChild(campaign.id)}
-                    dragP={campaignDragProps(campaign)} isDraggingThis={campaignIsDragging(campaign.id)} isOver={campaignIsOver(campaign.id)} />
+            {campaigns.map((campaign, i) => {
+              const { containerProps: cpCP, dropProps: cpDP } = campaignDragProps(campaign);
+              return (
+                <div key={campaign.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <ChildConnector isFirst={i === 0} isLast={i === campaigns.length - 1} single={campaigns.length === 1} />
+                  <div style={{ paddingLeft: 12, paddingRight: 12 }}>
+                    <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds}
+                      onUpdate={p => updateChild(campaign.id, p)} onRemove={() => removeChild(campaign.id)}
+                      containerProps={cpCP} dropProps={cpDP}
+                      isDraggingThis={campaignIsDragging(campaign.id)} isOver={campaignIsOver(campaign.id)} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -530,14 +589,50 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
-export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting }: {
+export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange }: {
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
   loadedAds: AdData[];
   savedLists?: { id: string; name: string; adIds: string[]; createdAt: number }[];
   onExport: () => void; exporting: boolean;
+  // Controlled from the parent so export can switch platforms and capture #structure-chart
+  // one at a time — the same pattern used for ad-preview slides (currentIndex).
+  activePlatformId?: string | null; onActivePlatformChange?: (id: string) => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Trackpad pinch — browsers report pinch as a wheel event with ctrlKey:true.
+  // A native (non-passive) listener is required since React's onWheel is passive
+  // by default and can't preventDefault the browser's own page-zoom on pinch.
+  // Zoom is anchored to the cursor position (not the top-left corner) by adjusting
+  // scroll offsets so the content point under the cursor stays visually fixed.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return; // plain two-finger scroll — let it pan normally
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      setZoom(prevZoom => {
+        const newZoom = Math.min(2, Math.max(0.25, +(prevZoom - e.deltaY * 0.01).toFixed(2)));
+        const unscaledX = (el.scrollLeft + cursorX) / prevZoom;
+        const unscaledY = (el.scrollTop + cursorY) / prevZoom;
+        const newScrollLeft = unscaledX * newZoom - cursorX;
+        const newScrollTop = unscaledY * newZoom - cursorY;
+        requestAnimationFrame(() => {
+          el.scrollLeft = newScrollLeft;
+          el.scrollTop = newScrollTop;
+        });
+        return newZoom;
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   function updateNode(id: string, patch: Partial<StructureNode>) {
     function walk(list: StructureNode[]): StructureNode[] {
@@ -550,32 +645,68 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
       return list.filter(n => n.id !== id).map(n => ({ ...n, children: walk(n.children) }));
     }
     onChange(walk(nodes));
+    // If the removed platform was active, fall back to whatever is now first
+    if (id === activePlatformId) {
+      const remaining = nodes.filter(n => n.id !== id);
+      onActivePlatformChange?.(remaining[0]?.id ?? "");
+    }
   }
   function addPlatform() {
-    onChange([...nodes, { id: uid(), type: "platform", name: "Facebook Ads", children: [] }]);
+    const newNode: StructureNode = { id: uid(), type: "platform", name: "Facebook Ads", children: [] };
+    onChange([...nodes, newNode]);
+    onActivePlatformChange?.(newNode.id);
   }
+
+  const activePlatform = nodes.find(n => n.id === activePlatformId) ?? nodes[0] ?? null;
 
   return (
     <DragCtx.Provider value={{ dragId, overId, setDragId, setOverId }}>
       <ExportCtx.Provider value={exporting}>
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0, flexWrap: "wrap" }}>
             <button onClick={addPlatform} style={toolBtn("#2563eb")}>+ Platform</button>
+
+            {/* Platform tabs — one platform is edited/viewed at a time */}
+            {!exporting && nodes.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                {nodes.map(platform => (
+                  <button key={platform.id} onClick={() => onActivePlatformChange?.(platform.id)}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 6, cursor: "pointer",
+                      border: platform.id === activePlatform?.id ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                      background: platform.id === activePlatform?.id ? "#eff6ff" : "#fff",
+                      color: platform.id === activePlatform?.id ? "#1e40af" : "#64748b",
+                    }}>
+                    {platform.name || "Platform"}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div style={{ flex: 1 }} />
+
+            {/* Zoom controls — a wrapper around #structure-chart is scaled for on-screen
+                viewing only; export always captures the natural-size #structure-chart. */}
+            {!exporting && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))} style={toolBtn("#64748b")}>−</button>
+                <button onClick={() => setZoom(1)} style={{ ...toolBtn("#64748b"), minWidth: 48 }}>{Math.round(zoom * 100)}%</button>
+                <button onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))} style={toolBtn("#64748b")}>+</button>
+              </div>
+            )}
+
             <button onClick={onExport} disabled={exporting || nodes.length === 0} style={toolBtn("#dc2626", exporting || nodes.length === 0)}>
               {exporting ? "Exporting..." : "Export รูป"}
             </button>
           </div>
-          <div style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
-            <div id="structure-chart" style={{ display: "inline-block", minWidth: "100%", padding: 40 }}>
-              {nodes.length === 0
-                ? <div style={{ textAlign: "center", color: "#9ca3af", padding: 60, fontSize: 14 }}>กด <strong>+ Platform</strong> เพื่อเริ่มสร้าง Ads Structure</div>
-                : <div style={{ display: "flex", justifyContent: "center", gap: 80 }}>
-                    {nodes.map(platform => (
-                      <PlatformNode key={platform.id} node={platform} loadedAds={loadedAds}
-                        onUpdate={p => updateNode(platform.id, p)} onRemove={() => removeNode(platform.id)} />
-                    ))}
-                  </div>}
+          <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
+            <div style={{ display: "inline-block", minWidth: "100%", transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+              <div id="structure-chart" style={{ display: "inline-block", padding: 40 }}>
+                {!activePlatform
+                  ? <div style={{ textAlign: "center", color: "#9ca3af", padding: 60, fontSize: 14 }}>กด <strong>+ Platform</strong> เพื่อเริ่มสร้าง Ads Structure</div>
+                  : <PlatformNode node={activePlatform} loadedAds={loadedAds}
+                      onUpdate={p => updateNode(activePlatform.id, p)} onRemove={() => removeNode(activePlatform.id)} />}
+              </div>
             </div>
           </div>
         </div>

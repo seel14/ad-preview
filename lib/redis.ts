@@ -22,6 +22,16 @@ export interface StructureNode {
   children: StructureNode[];
 }
 
+export interface TimelineEntry {
+  id: string;
+  date: string; // "YYYY-MM-DD"
+  channel?: string; // e.g. "Facebook", "Google", "TikTok"
+  title: string;
+  description?: string;
+  details?: Record<string, string>;
+  createdAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -29,6 +39,7 @@ export interface Project {
   adIds: string[];
   savedLists?: SavedList[];
   structure?: StructureNode[];
+  timeline?: TimelineEntry[];
   createdAt: number;
   updatedAt: number;
 }

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import SlideView from "./components/SlideView";
 import TokenGuide from "./components/TokenGuide";
 import AdsStructure, { type StructureNode } from "./components/AdsStructure";
+import Timeline, { type TimelineEntry } from "./components/Timeline";
+import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
+import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
 interface AdData {
   id: string;
@@ -19,46 +22,106 @@ interface AdData {
     thumbnail_url?: string;
     call_to_action_type?: string;
     object_story_spec?: {
-      link_data?: { message?: string; name?: string; description?: string; picture?: string; link?: string };
+      link_data?: {
+        message?: string; name?: string; description?: string; picture?: string; link?: string;
+        child_attachments?: { picture?: string; link?: string; name?: string; description?: string }[];
+      };
       video_data?: { message?: string; title?: string; image_url?: string };
     };
   };
   previewHtml: string | null;
+  albumImages?: string[];
   page?: { name: string; picture: string } | null;
 }
 
-interface SavedList {
-  id: string;
-  name: string;
-  adIds: string[];
-  createdAt: number;
+type Tab = "preview" | "structure" | "timeline";
+
+// Ad names repeat across ad sets (same creative reused) — collapse to one row per
+// unique name, keeping the first Ad ID encountered as the representative to add/load.
+function uniqueFbAdsByName(ads: FbAd[]): FbAd[] {
+  const seen = new Set<string>();
+  const result: FbAd[] = [];
+  for (const ad of ads) {
+    if (seen.has(ad.name)) continue;
+    seen.add(ad.name);
+    result.push(ad);
+  }
+  return result;
 }
 
-interface Project {
-  id: string;
-  name: string;
-  token: string;
-  adIds: string[];
-  savedLists?: SavedList[];
-  structure?: StructureNode[];
-  createdAt: number;
-  updatedAt: number;
+// jsPDF instance — typed loosely since the library is dynamically imported
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PdfDoc = any;
+
+const PDF_PAGE_W = 297; // landscape A4, mm
+const PDF_PAGE_H = 210;
+
+// Adds a canvas as its own page, fit-to-page with padding — used for both the
+// single-structure export and the per-platform structure pages in combined export.
+function addFittedImagePage(pdf: PdfDoc, canvas: HTMLCanvasElement, isFirstPage: boolean) {
+  if (!isFirstPage) pdf.addPage();
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  const pad = 10;
+  const maxW = PDF_PAGE_W - pad * 2;
+  const maxH = PDF_PAGE_H - pad * 2;
+  const ratio = canvas.width / canvas.height;
+  let w = maxW;
+  let h = w / ratio;
+  if (h > maxH) { h = maxH; w = h * ratio; }
+  const x = (PDF_PAGE_W - w) / 2;
+  const y = (PDF_PAGE_H - h) / 2;
+  pdf.addImage(imgData, "JPEG", x, y, w, h);
 }
 
-type Tab = "preview" | "structure";
+// Adds a centered text divider page — used to separate Saved Lists in a combined export.
+function addDividerPage(pdf: PdfDoc, title: string, subtitle: string, isFirstPage: boolean) {
+  if (!isFirstPage) pdf.addPage();
+  pdf.setFontSize(28);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(title, PDF_PAGE_W / 2, PDF_PAGE_H * 0.42, { align: "center" });
+  pdf.setFontSize(13);
+  pdf.setFont("helvetica", "normal");
+  pdf.text(subtitle, PDF_PAGE_W / 2, PDF_PAGE_H * 0.52, { align: "center" });
+}
+
+// Captures whichever platform is currently active in Ads Structure (#structure-chart
+// only ever renders one platform at a time) — shared by the standalone PNG export
+// and the "structure" section of renderSectionsToPdf.
+async function captureStructureChartCanvas(html2canvas: (typeof import("html2canvas-pro"))["default"]) {
+  const el = document.getElementById("structure-chart");
+  if (!el) return null;
+  return html2canvas(el, { scale: 2, backgroundColor: "#f9fafb", useCORS: true });
+}
+
+// The ordered list of things a combined PDF export can contain. One orchestrator
+// (renderSectionsToPdf) walks this list instead of each export handler
+// re-implementing its own jsPDF/html2canvas/render-wait sequencing.
+type ExportSection =
+  | { kind: "structure" }
+  | { kind: "timeline" }
+  | { kind: "divider"; title: string; subtitle: string }
+  | { kind: "ads"; ads: AdData[] };
 
 export default function Home() {
   const { data: session, status } = useSession();
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  const [storageError, setStorageError] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("preview");
+
+  const {
+    fbConnected, fbAdAccounts, fbSelectedAccount, setFbSelectedAccount, fbAds, fbCampaigns,
+    fbCampaignFilter, setFbCampaignFilter, fbAccountSearch, setFbAccountSearch,
+    fbCampaignSearch, setFbCampaignSearch, fbStatusFilter, setFbStatusFilter,
+    fbAdsLoading, fbSidebarOpen, setFbSidebarOpen,
+    connect: handleFbConnect, disconnect: handleFbDisconnect,
+  } = useFacebookBrowser(status);
+
+  const {
+    projects, currentId, setCurrentId, currentProject, projectsLoading, storageError, saveState,
+    newProject, deleteProject, renameProject, patchProject, persistTokenAndAdIds,
+  } = useProjectPersistence(status);
 
   const [token, setToken] = useState("");
   const [adIdsInput, setAdIdsInput] = useState("");
-  const [saveState, setSaveState] = useState<"" | "saving" | "saved">("");
 
   const [ads, setAds] = useState<AdData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -67,65 +130,59 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [exportMode, setExportMode] = useState(false);
   const [structureExporting, setStructureExporting] = useState(false);
+  const [timelineExporting, setTimelineExporting] = useState(false);
+  const [selectedListIds, setSelectedListIds] = useState<Set<string>>(new Set());
+  const [combineExporting, setCombineExporting] = useState(false);
+  const [activePlatformId, setActivePlatformId] = useState<string>("");
   const slideRef = useRef<HTMLDivElement>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentProject = projects.find(p => p.id === currentId) ?? null;
   const savedLists = currentProject?.savedLists ?? [];
   const structureNodes = currentProject?.structure ?? [];
+  const timeline = currentProject?.timeline ?? [];
 
+  // React to the active project changing (selection, creation, or deletion of the
+  // active one) by syncing the ad-loading state to match — this is the one place
+  // "which project is active" and "what's loaded in the ad preview" are coupled.
   useEffect(() => {
-    if (status !== "authenticated") return;
-    setProjectsLoading(true);
-    fetch("/api/projects")
-      .then(r => {
-        if (r.status === 503) { setStorageError(true); return []; }
-        return r.json();
-      })
-      .then((data: Project[]) => {
-        if (Array.isArray(data)) {
-          setProjects(data);
-          if (data[0]) selectProject(data[0]);
-        }
-      })
-      .finally(() => setProjectsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
-
-  function selectProject(p: Project) {
-    setCurrentId(p.id);
-    setToken(p.token);
-    setAdIdsInput(p.adIds.join("\n"));
+    setToken(currentProject?.token ?? "");
+    setAdIdsInput(currentProject?.adIds.join("\n") ?? "");
     setAds([]);
     setCurrentIndex(0);
     setStatusMsg("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId]);
+
+  // Keep the active platform tab pointed at a real node — fall back to the first
+  // platform whenever the current selection disappears (project switch, deletion, etc.)
+  useEffect(() => {
+    if (structureNodes.length === 0) { if (activePlatformId) setActivePlatformId(""); return; }
+    if (!structureNodes.some(n => n.id === activePlatformId)) setActivePlatformId(structureNodes[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureNodes, currentId]);
+
+  function handleAddFbAd(ad: FbAd) {
+    const line = ad.id;
+    setAdIdsInput(prev => {
+      const existing = prev.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      if (existing.includes(line)) return prev;
+      return prev ? `${prev}\n${line}` : line;
+    });
+  }
+
+  function selectProject(p: Project) {
+    setCurrentId(p.id);
   }
 
   async function handleNewProject() {
     const name = prompt("ชื่อ Project ใหม่:", "Project ใหม่");
     if (name === null) return;
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() || "Untitled" }),
-    });
-    if (!res.ok) { setStorageError(true); return; }
-    const project: Project = await res.json();
-    setProjects(prev => [project, ...prev]);
-    selectProject(project);
+    await newProject(name);
   }
 
   async function handleDeleteProject(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm("ลบ Project นี้?")) return;
-    await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (currentId === id) {
-      setCurrentId(null);
-      setToken("");
-      setAdIdsInput("");
-      setAds([]);
-    }
+    await deleteProject(id);
   }
 
   async function handleRename(id: string, e: React.MouseEvent) {
@@ -133,56 +190,27 @@ export default function Home() {
     const p = projects.find(x => x.id === id);
     const name = prompt("เปลี่ยนชื่อ Project:", p?.name ?? "");
     if (name === null) return;
-    setProjects(prev => prev.map(x => x.id === id ? { ...x, name } : x));
-    await fetch(`/api/projects/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
+    await renameProject(id, name);
   }
-
-  const persist = useCallback((tok: string, idsText: string) => {
-    if (!currentId) return;
-    setSaveState("saving");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      const adIds = idsText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      await fetch(`/api/projects/${currentId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tok, adIds }),
-      });
-      setProjects(prev => prev.map(p => p.id === currentId ? { ...p, token: tok, adIds } : p));
-      setSaveState("saved");
-      setTimeout(() => setSaveState(""), 1500);
-    }, 800);
-  }, [currentId]);
 
   function onTokenChange(v: string) {
     setToken(v);
-    persist(v, adIdsInput);
+    persistTokenAndAdIds(v, adIdsInput);
   }
 
   function onAdIdsChange(v: string) {
     setAdIdsInput(v);
-    persist(token, v);
+    persistTokenAndAdIds(token, v);
   }
 
-  async function handleLoad() {
-    const lines = adIdsInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-    if (!lines.length) return;
-
+  // Loads AdData for a list of ad IDs / preview URLs — shared by handleLoad (single list)
+  // and combined multi-list export (each Saved List is loaded through this same path).
+  async function loadAdsForIds(lines: string[], tok: string, onProgress?: (msg: string) => void): Promise<AdData[]> {
     // Separate direct preview URLs from ad IDs
     const isPreviewUrl = (s: string) => /^https?:\/\//i.test(s);
     const previewUrls = lines.filter(isPreviewUrl);
     const adIds = lines.filter(s => !isPreviewUrl(s));
 
-    // Require token only if there are real ad IDs to fetch
-    if (adIds.length && !token.trim()) return;
-
-    setLoading(true);
-    setAds([]);
-    setCurrentIndex(0);
     const results: AdData[] = [];
 
     // Add direct preview URLs as instant entries (no API call needed)
@@ -199,9 +227,9 @@ export default function Home() {
     });
 
     for (let i = 0; i < adIds.length; i++) {
-      setStatusMsg(`กำลังโหลด ${i + 1}/${adIds.length}...`);
+      onProgress?.(`กำลังโหลด ${i + 1}/${adIds.length}...`);
       try {
-        const res = await fetch(`/api/ads?adId=${adIds[i]}&token=${encodeURIComponent(token.trim())}`);
+        const res = await fetch(`/api/ads?adId=${adIds[i]}&token=${encodeURIComponent(tok.trim())}`);
         const data = await res.json();
         if (data.error) {
           results.push({ id: adIds[i], name: `❌ ${data.error}`, status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null });
@@ -212,6 +240,21 @@ export default function Home() {
         results.push({ id: adIds[i], name: "❌ โหลดไม่ได้", status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null });
       }
     }
+    return results;
+  }
+
+  async function handleLoad(linesOverride?: string[]) {
+    const lines = linesOverride ?? adIdsInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    if (!lines.length) return;
+
+    // Require token only if there are real ad IDs (non-URL lines) to fetch
+    const hasRealIds = lines.some(s => !/^https?:\/\//i.test(s));
+    if (hasRealIds && !token.trim()) return;
+
+    setLoading(true);
+    setAds([]);
+    setCurrentIndex(0);
+    const results = await loadAdsForIds(lines, token, msg => setStatusMsg(msg));
     setAds(results);
     setStatusMsg("");
     setLoading(false);
@@ -246,56 +289,154 @@ export default function Home() {
       updated = [newList];
     }
 
-    setProjects(prev => prev.map(p => p.id === currentId ? { ...p, savedLists: updated } : p));
-    await fetch(`/api/projects/${currentId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ savedLists: updated }),
-    });
+    await patchProject({ savedLists: updated });
   }
 
   function handleLoadList(list: SavedList) {
     setAdIdsInput(list.adIds.join("\n"));
-    persist(token, list.adIds.join("\n"));
+    persistTokenAndAdIds(token, list.adIds.join("\n"));
+  }
+
+  // Merge + dedupe ad IDs from every checked Saved List into the textarea, then load them all
+  function handleLoadSelectedLists() {
+    const lists = savedLists.filter(l => selectedListIds.has(l.id));
+    if (!lists.length) return;
+    const merged = Array.from(new Set(lists.flatMap(l => l.adIds)));
+    const text = merged.join("\n");
+    setAdIdsInput(text);
+    persistTokenAndAdIds(token, text);
+    void handleLoad(merged);
   }
 
   async function handleDeleteList(listId: string) {
-    if (!currentId) return;
     const updated = savedLists.filter(l => l.id !== listId);
-    setProjects(prev => prev.map(p => p.id === currentId ? { ...p, savedLists: updated } : p));
-    await fetch(`/api/projects/${currentId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ savedLists: updated }),
-    });
+    await patchProject({ savedLists: updated });
   }
 
   // Structure
   async function handleStructureChange(nodes: StructureNode[]) {
-    if (!currentId) return;
-    setProjects(prev => prev.map(p => p.id === currentId ? { ...p, structure: nodes } : p));
-    await fetch(`/api/projects/${currentId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ structure: nodes }),
-    });
+    await patchProject({ structure: nodes });
   }
 
-  async function handleExportStructure() {
-    setStructureExporting(true);
+  async function handleTimelineChange(entries: TimelineEntry[]) {
+    await patchProject({ timeline: entries });
+  }
+
+  // Walks an ordered list of ExportSections, building one PDF. Owns the jsPDF instance,
+  // the html2canvas capture loop, and the tab/platform switching + render-wait sequencing
+  // that every export handler used to reimplement independently.
+  async function renderSectionsToPdf(sections: ExportSection[]) {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: html2canvas } = await import("html2canvas-pro");
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    let firstPage = true;
+    const prevActiveTab = activeTab;
+    const prevActivePlatformId = activePlatformId;
+
+    for (const section of sections) {
+      if (section.kind === "structure") {
+        if (structureNodes.length === 0) continue;
+        setStatusMsg("กำลัง render Structure...");
+        setStructureExporting(true);
+        setActiveTab("structure");
+        await new Promise(r => setTimeout(r, 600));
+        for (const platform of structureNodes) {
+          setActivePlatformId(platform.id);
+          await new Promise(r => setTimeout(r, 400));
+          const canvas = await captureStructureChartCanvas(html2canvas);
+          if (!canvas) continue;
+          addFittedImagePage(pdf, canvas, firstPage);
+          firstPage = false;
+        }
+        setActivePlatformId(prevActivePlatformId);
+        setStructureExporting(false);
+      } else if (section.kind === "timeline") {
+        if (timeline.length === 0) continue;
+        setStatusMsg("กำลัง render Timeline...");
+        setActiveTab("timeline");
+        await new Promise(r => setTimeout(r, 500));
+        const el = document.getElementById("timeline-chart");
+        if (el) {
+          const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+          addFittedImagePage(pdf, canvas, firstPage);
+          firstPage = false;
+        }
+      } else if (section.kind === "divider") {
+        addDividerPage(pdf, section.title, section.subtitle, firstPage);
+        firstPage = false;
+      } else {
+        if (section.ads.length === 0) continue;
+        setActiveTab("preview");
+        setAds(section.ads);
+        await new Promise(r => setTimeout(r, 400));
+        for (let i = 0; i < section.ads.length; i++) {
+          setCurrentIndex(i);
+          setStatusMsg(`กำลัง render Ad ${i + 1}/${section.ads.length}...`);
+          await new Promise(r => setTimeout(r, 800));
+          const el = slideRef.current;
+          if (!el) continue;
+          const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" });
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
+          const imgH = (canvas.height / canvas.width) * PDF_PAGE_W;
+          const yOffset = Math.max(0, (PDF_PAGE_H - imgH) / 2);
+          if (!firstPage) pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, yOffset, PDF_PAGE_W, Math.min(imgH, PDF_PAGE_H));
+          firstPage = false;
+        }
+        setCurrentIndex(0);
+      }
+    }
+
+    setActiveTab(prevActiveTab);
+    return pdf;
+  }
+
+  async function handleExportTimelinePDF() {
+    if (!timeline.length) return;
+    setTimelineExporting(true);
     try {
-      const { default: html2canvas } = await import("html2canvas-pro");
-      const el = document.getElementById("structure-chart");
-      if (!el) return;
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#f9fafb", useCORS: true });
-      const link = document.createElement("a");
-      link.download = `${currentProject?.name ?? "ads"}-structure.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      const pdf = await renderSectionsToPdf([{ kind: "timeline" }]);
+      const fileName = currentProject?.name ? `${currentProject.name}-timeline.pdf` : "timeline.pdf";
+      pdf.save(fileName);
     } catch (e) {
       console.error(e);
       alert("Export ล้มเหลว");
     } finally {
+      setTimelineExporting(false);
+    }
+  }
+
+  async function handleExportStructure() {
+    setStructureExporting(true);
+    const prevActivePlatformId = activePlatformId;
+    try {
+      const { default: html2canvas } = await import("html2canvas-pro");
+      // One PNG per platform when there are multiple, otherwise the single whole-chart PNG (unchanged behavior).
+      // The chart canvas only renders the active platform, so switch platforms and capture sequentially.
+      if (structureNodes.length > 1) {
+        for (const platform of structureNodes) {
+          setActivePlatformId(platform.id);
+          await new Promise(r => setTimeout(r, 400));
+          const canvas = await captureStructureChartCanvas(html2canvas);
+          if (!canvas) continue;
+          const link = document.createElement("a");
+          link.download = `${currentProject?.name ?? "ads"}-structure-${platform.name || platform.id}.png`;
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+        }
+      } else {
+        const canvas = await captureStructureChartCanvas(html2canvas);
+        if (!canvas) return;
+        const link = document.createElement("a");
+        link.download = `${currentProject?.name ?? "ads"}-structure.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Export ล้มเหลว");
+    } finally {
+      setActivePlatformId(prevActivePlatformId);
       setStructureExporting(false);
     }
   }
@@ -305,27 +446,9 @@ export default function Home() {
     setExporting(true);
     setExportMode(true);
     try {
-      const { default: jsPDF } = await import("jspdf");
-      const { default: html2canvas } = await import("html2canvas-pro");
-      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-      const pageW = 297;
-      const pageH = 210;
-      for (let i = 0; i < ads.length; i++) {
-        setCurrentIndex(i);
-        setStatusMsg(`กำลัง render หน้า ${i + 1}/${ads.length}...`);
-        await new Promise(r => setTimeout(r, 800));
-        const el = slideRef.current;
-        if (!el) continue;
-        const canvas = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" });
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-        const imgH = (canvas.height / canvas.width) * pageW;
-        const yOffset = Math.max(0, (pageH - imgH) / 2);
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, "JPEG", 0, yOffset, pageW, Math.min(imgH, pageH));
-      }
+      const pdf = await renderSectionsToPdf([{ kind: "ads", ads }]);
       const fileName = currentProject?.name ? `${currentProject.name}.pdf` : "ad-preview.pdf";
       pdf.save(fileName);
-      setCurrentIndex(0);
       setStatusMsg("✅ Export PDF สำเร็จ");
     } catch (e) {
       console.error(e);
@@ -333,6 +456,55 @@ export default function Home() {
     } finally {
       setExporting(false);
       setExportMode(false);
+    }
+  }
+
+  async function handleExportCombined() {
+    if (!ads.length && structureNodes.length === 0) return;
+    setExporting(true);
+    setExportMode(true);
+    try {
+      const pdf = await renderSectionsToPdf([{ kind: "structure" }, { kind: "timeline" }, { kind: "ads", ads }]);
+      const fileName = currentProject?.name ? `${currentProject.name}-combined.pdf` : "ad-combined.pdf";
+      pdf.save(fileName);
+      setStatusMsg("✅ Export Combined PDF สำเร็จ");
+    } catch (e) {
+      console.error(e);
+      setStatusMsg("❌ Export ล้มเหลว");
+    } finally {
+      setExporting(false);
+      setExportMode(false);
+    }
+  }
+
+  // Exports the checked Saved Lists as one combined PDF, with a divider page between each list's ads.
+  async function handleExportCombinedLists() {
+    const lists = savedLists.filter(l => selectedListIds.has(l.id));
+    if (!lists.length || !token.trim()) return;
+
+    setCombineExporting(true);
+    setExportMode(true);
+    try {
+      // Load each selected list sequentially, then build one divider+ads section pair per list.
+      const sections: ExportSection[] = [];
+      for (const list of lists) {
+        setStatusMsg(`กำลังโหลด "${list.name}"...`);
+        const listAds = await loadAdsForIds(list.adIds, token, msg => setStatusMsg(`${list.name}: ${msg}`));
+        sections.push({ kind: "divider", title: list.name, subtitle: `${listAds.length} ads` });
+        sections.push({ kind: "ads", ads: listAds });
+      }
+
+      const pdf = await renderSectionsToPdf(sections);
+      const fileName = currentProject?.name ? `${currentProject.name}-combined-lists.pdf` : "ad-combined-lists.pdf";
+      pdf.save(fileName);
+      setStatusMsg("✅ Export Combined PDF สำเร็จ");
+    } catch (e) {
+      console.error(e);
+      setStatusMsg("❌ Export ล้มเหลว");
+    } finally {
+      setCombineExporting(false);
+      setExportMode(false);
+      setTimeout(() => setStatusMsg(""), 3000);
     }
   }
 
@@ -417,29 +589,82 @@ export default function Home() {
 
         {/* Center: tabs */}
         <div className="flex items-center gap-0.5 rounded-lg p-0.5" style={{ background: "#f1f5f9" }}>
-          {(["preview", "structure"] as Tab[]).map(tab => (
+          {(["preview", "structure", "timeline"] as Tab[]).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="px-4 py-1.5 rounded-md text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={activeTab === tab
                 ? { background: "#fff", color: "#1e40af", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
                 : { color: "#64748b" }}>
-              {tab === "preview" ? "Ad Preview" : "Ads Structure"}
+              {tab === "preview" ? "Ad Preview" : tab === "structure" ? "Ads Structure" : "Timeline"}
             </button>
           ))}
         </div>
 
         {/* Right: actions + user */}
         <div className="flex items-center gap-2">
-          {activeTab === "preview" && ads.length > 0 && (
-            <button onClick={handleExportPDF} disabled={exporting}
+          {ads.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              {/* Combined PDF: structure + previews */}
+              <button onClick={handleExportCombined} disabled={exporting}
+                className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
+                style={{ background: exporting ? "#94a3b8" : "linear-gradient(135deg,#7c3aed,#6d28d9)" }}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                {exporting ? "Exporting..." : "Combined PDF"}
+              </button>
+              {/* Ads-only PDF */}
+              {activeTab === "preview" && (
+                <button onClick={handleExportPDF} disabled={exporting}
+                  className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
+                  style={{ background: exporting ? "#94a3b8" : "linear-gradient(135deg,#dc2626,#b91c1c)" }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export PDF
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Timeline-only PDF export */}
+          {activeTab === "timeline" && timeline.length > 0 && (
+            <button onClick={handleExportTimelinePDF} disabled={timelineExporting}
               className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
-              style={{ background: exporting ? "#94a3b8" : "linear-gradient(135deg,#dc2626,#b91c1c)" }}>
+              style={{ background: timelineExporting ? "#94a3b8" : "linear-gradient(135deg,#dc2626,#b91c1c)" }}>
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              {exporting ? "Exporting..." : "Export PDF"}
+              {timelineExporting ? "Exporting..." : "Export PDF"}
             </button>
           )}
+
+          {/* Facebook connect / toggle — opens the right-side account & campaign browser */}
+          {!fbConnected ? (
+            <button
+              onClick={handleFbConnect}
+              className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 cursor-pointer"
+              style={{ background: "linear-gradient(135deg,#1877F2,#0a5bb8)" }}>
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              Connect Facebook
+            </button>
+          ) : (
+            <button
+              onClick={() => setFbSidebarOpen(o => !o)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors duration-150 cursor-pointer"
+              style={{ background: fbSidebarOpen ? "#eff6ff" : "#f8fafc", color: "#1e40af", border: "1px solid #bfdbfe" }}>
+              <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="#1877F2">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              Facebook Ads
+              <svg className="w-3 h-3 transition-transform" style={{ transform: fbSidebarOpen ? "rotate(180deg)" : "" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 pl-3 border-l border-slate-200 ml-1">
             {session?.user?.image && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -566,7 +791,7 @@ export default function Home() {
               </div>
 
               {/* Load button */}
-              <button onClick={handleLoad}
+              <button onClick={() => handleLoad()}
                 disabled={loading || !adIdsInput.trim()}
                 className="w-full flex items-center justify-center gap-2 font-semibold rounded-lg transition-all duration-150 cursor-pointer"
                 style={{
@@ -606,6 +831,16 @@ export default function Home() {
                         style={{ padding: "7px 8px", border: "1px solid #f1f5f9", background: "#fff" }}
                         onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
                         onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>
+                        <input type="checkbox" className="cursor-pointer flex-shrink-0"
+                          checked={selectedListIds.has(list.id)}
+                          onChange={e => {
+                            setSelectedListIds(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(list.id); else next.delete(list.id);
+                              return next;
+                            });
+                          }}
+                        />
                         <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                         </svg>
@@ -626,6 +861,25 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  {selectedListIds.size > 0 && (
+                    <div className="flex flex-col gap-1.5 mt-2" style={{ padding: "8px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                      <span style={{ fontSize: 10, color: "#64748b" }}>เลือกแล้ว {selectedListIds.size} List</span>
+                      <button onClick={handleLoadSelectedLists} disabled={loading}
+                        className="font-semibold rounded-md cursor-pointer disabled:opacity-50"
+                        style={{ fontSize: 10, padding: "6px 0", color: "#fff", background: loading ? "#94a3b8" : "#2563eb" }}>
+                        {loading ? "กำลังโหลด..." : "โหลด Ads ที่เลือกทั้งหมด"}
+                      </button>
+                      <button onClick={handleExportCombinedLists} disabled={combineExporting}
+                        className="font-semibold rounded-md cursor-pointer disabled:opacity-50"
+                        style={{ fontSize: 10, padding: "6px 0", color: "#fff", background: combineExporting ? "#94a3b8" : "#dc2626" }}>
+                        {combineExporting ? "..." : "Combined PDF"}
+                      </button>
+                      <button onClick={() => setSelectedListIds(new Set())}
+                        className="cursor-pointer" style={{ fontSize: 10, color: "#94a3b8", textAlign: "left" }}>
+                        ล้างการเลือก
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -689,7 +943,7 @@ export default function Home() {
                 </div>
 
                 <div ref={slideRef}>
-                  <SlideView ad={ads[currentIndex]} index={currentIndex} exportMode={exportMode} />
+                  <SlideView ad={ads[currentIndex]} index={currentIndex} exportMode={exportMode} albumImages={ads[currentIndex].albumImages} />
                 </div>
 
                 {statusMsg && (
@@ -700,7 +954,7 @@ export default function Home() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === "structure" ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             {currentProject ? (
               <AdsStructure
@@ -710,6 +964,8 @@ export default function Home() {
                 savedLists={savedLists}
                 onExport={handleExportStructure}
                 exporting={structureExporting}
+                activePlatformId={activePlatformId}
+                onActivePlatformChange={setActivePlatformId}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
@@ -717,6 +973,149 @@ export default function Home() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {currentProject ? (
+              <Timeline entries={timeline} onChange={handleTimelineChange} projectName={currentProject?.name} />
+            ) : (
+              <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
+                เลือก Project ก่อน
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Right panel: Facebook account/campaign browser ── */}
+        {fbConnected && fbSidebarOpen && (
+          <aside className="flex flex-col flex-shrink-0" style={{ width: 320, background: "#fff", borderLeft: "1px solid #e2e8f0" }}>
+            <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="#1877F2">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Facebook Ads</span>
+              </div>
+              <button onClick={() => setFbSidebarOpen(false)} className="cursor-pointer" style={{ color: "#94a3b8" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* Ad Account selector */}
+              {fbAdAccounts.length > 1 && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Ad Account</label>
+                  <input type="text" value={fbAccountSearch} onChange={e => setFbAccountSearch(e.target.value)}
+                    placeholder="ค้นหา Account..."
+                    style={{ marginTop: 4, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}
+                  />
+                  <select
+                    value={fbSelectedAccount}
+                    onChange={e => setFbSelectedAccount(e.target.value)}
+                    style={{ marginTop: 6, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}>
+                    <option value="">เลือก Ad Account...</option>
+                    {fbAdAccounts
+                      .filter(acc => acc.name.toLowerCase().includes(fbAccountSearch.toLowerCase()))
+                      .map(acc => (
+                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+              {fbAdAccounts.length === 1 && (
+                <div style={{ fontSize: 12, color: "#475569" }}>
+                  <span style={{ fontWeight: 600 }}>Account:</span> {fbAdAccounts[0].name}
+                </div>
+              )}
+
+              {/* Filters */}
+              {fbSelectedAccount && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Campaign</label>
+                    <input type="text" value={fbCampaignSearch} onChange={e => setFbCampaignSearch(e.target.value)}
+                      placeholder="ค้นหา Campaign..."
+                      style={{ marginTop: 4, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}
+                    />
+                    <select
+                      value={fbCampaignFilter}
+                      onChange={e => setFbCampaignFilter(e.target.value)}
+                      style={{ marginTop: 6, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}>
+                      <option value="">ทุก Campaign</option>
+                      {fbCampaigns
+                        .filter(c => c.name.toLowerCase().includes(fbCampaignSearch.toLowerCase()))
+                        .map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Status</label>
+                    <select
+                      value={fbStatusFilter}
+                      onChange={e => setFbStatusFilter(e.target.value)}
+                      style={{ marginTop: 4, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}>
+                      <option value="">ทุก Status</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="PAUSED">Paused</option>
+                      <option value="ARCHIVED">Archived</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Ads list */}
+              {fbSelectedAccount && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Ads</label>
+                  <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 5 }}>
+                    {fbAdsLoading ? (
+                      <p style={{ fontSize: 12, color: "#94a3b8", padding: "6px 2px" }}>กำลังโหลด...</p>
+                    ) : fbAds.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "#94a3b8", padding: "6px 2px" }}>ไม่มี Ads</p>
+                    ) : uniqueFbAdsByName(fbAds).map(ad => {
+                      const thumb = ad.creative?.thumbnail_url ?? ad.creative?.image_url;
+                      const alreadyAdded = adIdsInput.split(/[\n,]+/).map(s => s.trim()).includes(ad.id);
+                      return (
+                        <div key={ad.id}
+                          className="group flex items-center gap-2 rounded-lg transition-colors duration-150"
+                          style={{ padding: "6px 8px", border: "1px solid #f1f5f9", background: "#fff", cursor: "pointer" }}
+                          onMouseEnter={e => (e.currentTarget.style.background = "#f0f9ff")}
+                          onMouseLeave={e => (e.currentTarget.style.background = alreadyAdded ? "#f0fdf4" : "#fff")}>
+                          <div style={{ width: 32, height: 32, borderRadius: 5, overflow: "hidden", flexShrink: 0, background: "#e2e8f0" }}>
+                            {thumb && <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 11, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.name}</p>
+                            <p style={{ fontSize: 10, color: ad.status === "ACTIVE" ? "#16a34a" : "#94a3b8" }}>{ad.status}</p>
+                          </div>
+                          <button
+                            onClick={() => handleAddFbAd(ad)}
+                            disabled={alreadyAdded}
+                            style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, border: "none", cursor: alreadyAdded ? "default" : "pointer",
+                              background: alreadyAdded ? "#dcfce7" : "#2563eb", color: alreadyAdded ? "#16a34a" : "#fff", flexShrink: 0 }}>
+                            {alreadyAdded ? "✓" : "+"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #f1f5f9", flexShrink: 0 }}>
+              <button onClick={handleFbDisconnect}
+                style={{ fontSize: 11, color: "#94a3b8", cursor: "pointer", background: "none", border: "none", textAlign: "left", padding: "2px 0" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                Disconnect Facebook
+              </button>
+            </div>
+          </aside>
         )}
       </div>
     </main>

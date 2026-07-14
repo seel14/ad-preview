@@ -10,23 +10,23 @@ function genId() {
 // GET — list projects for the signed-in user
 export async function GET() {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user?.partitionKey) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!redis) return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
 
-  const projects = await getProjects(session.user.id);
+  const projects = await getProjects(session.user.partitionKey);
   return NextResponse.json(projects);
 }
 
 // POST — create a new project
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user?.partitionKey) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!redis) return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
 
   const body = await req.json().catch(() => ({}));
   const name = (body.name ?? "").trim() || "Untitled Project";
 
-  const projects = await getProjects(session.user.id);
+  const projects = await getProjects(session.user.partitionKey);
   const now = Date.now();
   const project: Project = {
     id: genId(),
@@ -37,6 +37,6 @@ export async function POST(req: Request) {
     updatedAt: now,
   };
   projects.unshift(project);
-  await saveProjects(session.user.id, projects);
+  await saveProjects(session.user.partitionKey, projects);
   return NextResponse.json(project);
 }

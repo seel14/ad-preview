@@ -509,16 +509,21 @@ export default function Home() {
   }
 
   // ---- Loading / login states ----
+  const loginBg = {
+    background: "radial-gradient(ellipse at 60% 20%, #dbeafe 0%, #eff6ff 40%, #f0f9ff 100%)",
+    backgroundSize: "cover",
+  } as const;
+
   if (status === "loading") {
     return (
-      <main className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg,#eff6ff 0%,#f0f9ff 100%)" }}>
+      <main className="min-h-screen flex items-center justify-center" style={loginBg}>
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}>
             <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
             </svg>
           </div>
-          <svg className="animate-spin w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+          <svg className="animate-spin w-5 h-5" style={{ color: "#2563eb" }} fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
           </svg>
@@ -529,25 +534,29 @@ export default function Home() {
 
   if (status === "unauthenticated") {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6" style={{ background: "linear-gradient(135deg,#eff6ff 0%,#f0f9ff 100%)" }}>
+      <main className="min-h-screen flex items-center justify-center p-6" style={loginBg}>
         <div className="w-full max-w-sm">
           {/* Brand */}
           <div className="flex flex-col items-center mb-8">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 shadow-lg" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 8px 24px rgba(37,99,235,0.4)" }}>
+              <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">Ad Preview</h1>
-            <p className="text-sm text-slate-500 mt-1">เครื่องมือดู Preview และ Export โฆษณา Meta</p>
+            <h1 className="text-2xl font-bold" style={{ color: "#0f172a", letterSpacing: "-0.02em" }}>Ad Preview</h1>
+            <p className="text-sm mt-1.5" style={{ color: "#64748b" }}>เครื่องมือดู Preview และ Export โฆษณา Meta</p>
           </div>
 
           {/* Card */}
-          <div className="bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
-            <p className="text-sm font-medium text-slate-700 mb-4 text-center">เข้าสู่ระบบเพื่อเริ่มใช้งาน</p>
+          <div className="rounded-2xl p-8" style={{ background: "#fff", boxShadow: "0 4px 24px rgba(15,23,42,0.08), 0 1px 3px rgba(15,23,42,0.06)", border: "1px solid #e2e8f0" }}>
+            <p className="text-sm font-medium text-center mb-5" style={{ color: "#475569" }}>เข้าสู่ระบบเพื่อเริ่มใช้งาน</p>
             <button
               onClick={() => signIn("google")}
-              className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-800 font-medium rounded-xl py-3 text-sm transition-all duration-150 shadow-sm cursor-pointer"
+              className="w-full flex items-center justify-center gap-3 font-medium rounded-xl py-3 text-sm cursor-pointer transition-all duration-150"
+              style={{ background: "#fff", border: "1.5px solid #e2e8f0", color: "#1e293b", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#93c5fd"; e.currentTarget.style.background = "#eff6ff"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#fff"; }}
             >
               <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -564,16 +573,30 @@ export default function Home() {
   }
 
   // ---- Authenticated app ----
-  const headerH = 56;
+  const headerH = 60;
+  const TAB_META: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    {
+      id: "preview", label: "Ad Preview",
+      icon: <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>,
+    },
+    {
+      id: "structure", label: "Ads Structure",
+      icon: <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h16M4 12h10M4 19h6" /></svg>,
+    },
+    {
+      id: "timeline", label: "Timeline",
+      icon: <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
+    },
+  ];
   return (
     <main className="min-h-screen" style={{ background: "#f1f5f9" }}>
       {/* ── Header ── */}
-      <header style={{ height: headerH, background: "#fff", borderBottom: "1px solid #e2e8f0" }}
+      <header style={{ height: headerH, background: "#fff", borderBottom: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
         className="flex items-center justify-between px-5 flex-shrink-0">
         {/* Left: brand + breadcrumb */}
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
+            style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 2px 6px rgba(37,99,235,0.35)" }}>
             <svg className="w-4.5 h-4.5 text-white" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
             </svg>
@@ -588,14 +611,15 @@ export default function Home() {
         </div>
 
         {/* Center: tabs */}
-        <div className="flex items-center gap-0.5 rounded-lg p-0.5" style={{ background: "#f1f5f9" }}>
-          {(["preview", "structure", "timeline"] as Tab[]).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-4 py-1.5 rounded-md text-xs font-semibold transition-all duration-150 cursor-pointer"
-              style={activeTab === tab
-                ? { background: "#fff", color: "#1e40af", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
-                : { color: "#64748b" }}>
-              {tab === "preview" ? "Ad Preview" : tab === "structure" ? "Ads Structure" : "Timeline"}
+        <div className="flex items-center gap-0.5 rounded-xl p-1" style={{ background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+          {TAB_META.map(({ id, label, icon }) => (
+            <button key={id} onClick={() => setActiveTab(id)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer"
+              style={activeTab === id
+                ? { background: "#fff", color: "#1e40af", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", border: "1px solid #dbeafe" }
+                : { color: "#64748b", border: "1px solid transparent" }}>
+              <span style={{ color: activeTab === id ? "#2563eb" : "#94a3b8" }}>{icon}</span>
+              {label}
             </button>
           ))}
         </div>
@@ -692,15 +716,17 @@ export default function Home() {
       <div className="flex" style={{ height: `calc(100vh - ${headerH}px)` }}>
 
         {/* ── Sidebar ── */}
-        <aside className="flex flex-col flex-shrink-0" style={{ width: 272, background: "#fff", borderRight: "1px solid #e2e8f0" }}>
+        <aside className="flex flex-col flex-shrink-0" style={{ width: 272, background: "#fff", borderRight: "1px solid #e2e8f0", boxShadow: "1px 0 0 #f1f5f9" }}>
 
           {/* Projects section */}
-          <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid #f1f5f9" }}>
+          <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid #f1f5f9", background: "#fafbfd" }}>
             <div className="flex items-center justify-between mb-2">
-              <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.07em", textTransform: "uppercase" }}>Projects</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>Projects</span>
               <button onClick={handleNewProject}
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
-                style={{ fontSize: 11, fontWeight: 600 }}>
+                className="flex items-center gap-1 cursor-pointer"
+                style={{ fontSize: 11, fontWeight: 600, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "2px 8px" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#dbeafe"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#eff6ff"; }}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                 </svg>
@@ -717,15 +743,17 @@ export default function Home() {
                 <div key={p.id} onClick={() => selectProject(p)}
                   className="group flex items-center gap-2 rounded-lg cursor-pointer transition-all duration-150"
                   style={{
-                    padding: "7px 8px",
+                    padding: "7px 9px",
                     background: currentId === p.id ? "#eff6ff" : "transparent",
-                    borderLeft: currentId === p.id ? "2px solid #2563eb" : "2px solid transparent",
-                  }}>
+                    border: currentId === p.id ? "1px solid #bfdbfe" : "1px solid transparent",
+                  }}
+                  onMouseEnter={e => { if (currentId !== p.id) e.currentTarget.style.background = "#f8fafc"; }}
+                  onMouseLeave={e => { if (currentId !== p.id) e.currentTarget.style.background = "transparent"; }}>
                   <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                     style={{ color: currentId === p.id ? "#2563eb" : "#94a3b8" }}>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                   </svg>
-                  <span className="flex-1 truncate" style={{ fontSize: 12, fontWeight: currentId === p.id ? 600 : 400, color: currentId === p.id ? "#1e40af" : "#334155" }}>
+                  <span className="flex-1 truncate" style={{ fontSize: 12, fontWeight: currentId === p.id ? 600 : 400, color: currentId === p.id ? "#1e40af" : "#475569" }}>
                     {p.name}
                   </span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -754,7 +782,7 @@ export default function Home() {
               {/* Token */}
               <div>
                 <div className="flex items-center mb-1.5">
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Access Token</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "#334155" }}>Access Token</label>
                   <TokenGuide />
                   <div className="flex-1" />
                   {saveState === "saving" && <span style={{ fontSize: 10, color: "#94a3b8" }}>บันทึก...</span>}
@@ -771,7 +799,7 @@ export default function Home() {
               {/* Ad IDs */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Ad IDs / Preview Links</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "#334155" }}>Ad IDs / Preview Links</label>
                   {adIdsInput.trim() && (
                     <button onClick={handleSaveList} className="cursor-pointer"
                       style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}
@@ -822,13 +850,13 @@ export default function Home() {
               {savedLists.length > 0 && (
                 <div>
                   <div className="flex items-center mb-2">
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.07em", textTransform: "uppercase" }}>Saved Lists</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>Saved Lists</span>
                   </div>
                   <div className="flex flex-col gap-1">
                     {savedLists.map(list => (
                       <div key={list.id}
                         className="group flex items-center gap-2 rounded-lg transition-colors duration-150"
-                        style={{ padding: "7px 8px", border: "1px solid #f1f5f9", background: "#fff" }}
+                        style={{ padding: "7px 9px", border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
                         onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
                         onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>
                         <input type="checkbox" className="cursor-pointer flex-shrink-0"

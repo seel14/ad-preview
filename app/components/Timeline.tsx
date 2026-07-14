@@ -16,7 +16,7 @@ const CHANNEL_PRESETS = ["Facebook", "Google", "TikTok", "LINE", "Other"];
 const CHANNEL_COLORS: Record<string, { bg: string; text: string }> = {
   Facebook: { bg: "#e7f0fe", text: "#1877F2" },
   Google: { bg: "#fce8e6", text: "#ea4335" },
-  TikTok: { bg: "#feeef2", text: "#fe2c55" },
+  TikTok: { bg: "#e8e8e8", text: "#000000" },
   LINE: { bg: "#e6f7e6", text: "#06c755" },
 };
 function channelColor(channel: string) {
@@ -128,8 +128,15 @@ export default function Timeline({ entries, onChange, projectName }: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ date: "", channel: "", title: "", description: "", details: {} as Record<string, string> });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
-  const [filterFrom, setFilterFrom] = useState("");
-  const [filterTo, setFilterTo] = useState("");
+  const [filterFrom, setFilterFrom] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [filterTo, setFilterTo] = useState(() => {
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+  });
 
   const filtered = entries.filter(e =>
     (!filterFrom || e.date >= filterFrom) && (!filterTo || e.date <= filterTo)
@@ -207,10 +214,10 @@ export default function Timeline({ entries, onChange, projectName }: {
         <div style={{ width: 1, height: 20, background: "#e5e7eb", margin: "0 4px" }} />
 
         <label style={{ fontSize: 11, color: "#64748b" }}>จาก</label>
-        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}
+        <input type="date" value={filterFrom} max={filterTo || undefined} onChange={e => setFilterFrom(e.target.value)}
           style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px" }} />
         <label style={{ fontSize: 11, color: "#64748b" }}>ถึง</label>
-        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)}
+        <input type="date" value={filterTo} min={filterFrom || undefined} onChange={e => setFilterTo(e.target.value)}
           style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px" }} />
         {hasFilter && (
           <button onClick={() => { setFilterFrom(""); setFilterTo(""); }}
@@ -366,28 +373,36 @@ export default function Timeline({ entries, onChange, projectName }: {
                 const isFirstInRow = i % HORIZONTAL_COLS === 0;
                 const isLastInRow = i % HORIZONTAL_COLS === HORIZONTAL_COLS - 1 || i === dateGroups.length - 1;
                 return (
-                <div key={group.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+                <div key={group.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", padding: "0 6px" }}>
                   {/* Connector row */}
                   <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
                     <div style={{ flex: 1, height: 2, background: isFirstInRow ? "transparent" : "#e2e8f0" }} />
                     <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
                     <div style={{ flex: 1, height: 2, background: isLastInRow ? "transparent" : "#e2e8f0" }} />
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginTop: 10 }}>{formatDate(group.date)}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginTop: 10, marginBottom: 8 }}>{formatDate(group.date)}</div>
 
-                  {/* Same-date events stack downward under their shared date */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+                  {/* Same-date events — each in its own framed card */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                     {group.entries.map(entry => (
-                      <div key={entry.id} className="group" style={{ marginTop: 6, textAlign: "center", padding: "0 8px", width: "100%" }}>
+                      <div key={entry.id} className="group" style={{
+                        border: "1.5px solid #e2e8f0",
+                        borderRadius: 10,
+                        background: "#f8fafc",
+                        padding: "10px 10px 8px",
+                        textAlign: "center",
+                        width: "100%",
+                        boxSizing: "border-box",
+                      }}>
                         {entry.channel && (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(entry.channel).bg, color: channelColor(entry.channel).text }}>
                             <ChannelIcon channel={entry.channel} />
                             {entry.channel}
                           </span>
                         )}
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>
                         {entry.description && (
-                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                         )}
                         <DetailsList details={entry.details} align="center" />
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>

@@ -143,7 +143,7 @@ export default function Timeline({ entries, onChange, projectName }: {
   );
   const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date));
   const hasFilter = !!filterFrom || !!filterTo;
-  const HORIZONTAL_COLS = 5;
+  const HORIZONTAL_COLS = 6;
 
   // Horizontal layout groups same-date events into one column, stacked downward,
   // instead of giving each event its own slot on the timeline.

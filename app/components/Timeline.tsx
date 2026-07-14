@@ -382,42 +382,59 @@ export default function Timeline({ entries, onChange, projectName }: {
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginTop: 10, marginBottom: 8 }}>{formatDate(group.date)}</div>
 
-                  {/* Same-date events — each in its own framed card */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                    {group.entries.map(entry => (
-                      <div key={entry.id} className="group" style={{
-                        border: "1.5px solid #e2e8f0",
-                        borderRadius: 10,
-                        background: "#f8fafc",
-                        padding: "10px 10px 8px",
-                        textAlign: "center",
-                        width: "100%",
-                        boxSizing: "border-box",
-                      }}>
-                        {entry.channel && (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(entry.channel).bg, color: channelColor(entry.channel).text }}>
-                            <ChannelIcon channel={entry.channel} />
-                            {entry.channel}
-                          </span>
-                        )}
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>
-                        {entry.description && (
-                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
-                        )}
-                        <DetailsList details={entry.details} align="center" />
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>
-                          <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                            onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                            แก้ไข
-                          </button>
-                          <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                            onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                            ลบ
-                          </button>
-                        </div>
+                  {/* Same-date events grouped by channel — same channel → one card */}
+                  {(() => {
+                    const channelGroups: { channel: string; entries: TimelineEntry[] }[] = [];
+                    for (const entry of group.entries) {
+                      const key = entry.channel ?? "";
+                      const last = channelGroups[channelGroups.length - 1];
+                      if (last && last.channel === key) last.entries.push(entry);
+                      else channelGroups.push({ channel: key, entries: [entry] });
+                    }
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                        {channelGroups.map(cg => (
+                          <div key={cg.channel + cg.entries[0].id} style={{
+                            border: "1.5px solid #e2e8f0",
+                            borderRadius: 10,
+                            background: "#f8fafc",
+                            padding: "10px 10px 8px",
+                            textAlign: "center",
+                            width: "100%",
+                            boxSizing: "border-box",
+                          }}>
+                            {cg.channel && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(cg.channel).bg, color: channelColor(cg.channel).text }}>
+                                <ChannelIcon channel={cg.channel} />
+                                {cg.channel}
+                              </span>
+                            )}
+                            {/* If multiple entries share this channel, stack their content */}
+                            {cg.entries.map((entry, ei) => (
+                              <div key={entry.id} className="group">
+                                {ei > 0 && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>
+                                {entry.description && (
+                                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
+                                )}
+                                <DetailsList details={entry.details} align="center" />
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>
+                                  <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                                    onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                                    แก้ไข
+                                  </button>
+                                  <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                                    onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                                    ลบ
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
                 </div>
                 );
               })}

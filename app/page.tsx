@@ -121,6 +121,7 @@ export default function Home() {
   } = useProjectPersistence(status);
 
   const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [adIdsInput, setAdIdsInput] = useState("");
 
   const [ads, setAds] = useState<AdData[]>([]);
@@ -520,7 +521,7 @@ export default function Home() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}>
             <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.952 9.168-4.837" />
             </svg>
           </div>
           <svg className="animate-spin w-5 h-5" style={{ color: "#2563eb" }} fill="none" viewBox="0 0 24 24">
@@ -541,7 +542,7 @@ export default function Home() {
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
               style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 8px 24px rgba(37,99,235,0.4)" }}>
               <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.952 9.168-4.837" />
               </svg>
             </div>
             <h1 className="text-2xl font-bold" style={{ color: "#0f172a", letterSpacing: "-0.02em" }}>Ad Preview</h1>
@@ -624,43 +625,50 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Right: actions + user */}
+        {/* Right: export actions + FB + user */}
         <div className="flex items-center gap-2">
-          {ads.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              {/* Combined PDF: structure + previews */}
-              <button onClick={handleExportCombined} disabled={exporting}
-                className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
-                style={{ background: exporting ? "#94a3b8" : "linear-gradient(135deg,#7c3aed,#6d28d9)" }}>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                {exporting ? "Exporting..." : "Combined PDF"}
-              </button>
-              {/* Ads-only PDF */}
-              {activeTab === "preview" && (
-                <button onClick={handleExportPDF} disabled={exporting}
-                  className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
-                  style={{ background: exporting ? "#94a3b8" : "linear-gradient(135deg,#dc2626,#b91c1c)" }}>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export PDF
-                </button>
-              )}
-            </div>
-          )}
 
-          {/* Timeline-only PDF export */}
-          {activeTab === "timeline" && timeline.length > 0 && (
-            <button onClick={handleExportTimelinePDF} disabled={timelineExporting}
-              className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 cursor-pointer"
-              style={{ background: timelineExporting ? "#94a3b8" : "linear-gradient(135deg,#dc2626,#b91c1c)" }}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              {timelineExporting ? "Exporting..." : "Export PDF"}
-            </button>
+          {/* Export zone — shown only when there's something to export */}
+          {(ads.length > 0 || (activeTab === "timeline" && timeline.length > 0)) && (
+            <>
+              <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
+              <div className="flex items-center gap-1" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "3px 4px" }}>
+                {ads.length > 0 && (
+                  <button onClick={handleExportCombined} disabled={exporting}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
+                    style={{ color: exporting ? "#94a3b8" : "#6d28d9", background: exporting ? "transparent" : "#ede9fe", border: "none" }}
+                    title="Combined PDF (Structure + Ads)">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {exporting ? "..." : "Combined PDF"}
+                  </button>
+                )}
+                {ads.length > 0 && activeTab === "preview" && (
+                  <button onClick={handleExportPDF} disabled={exporting}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
+                    style={{ color: exporting ? "#94a3b8" : "#b91c1c", background: exporting ? "transparent" : "#fee2e2", border: "none" }}
+                    title="Export Ads PDF only">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Ads PDF
+                  </button>
+                )}
+                {activeTab === "timeline" && timeline.length > 0 && (
+                  <button onClick={handleExportTimelinePDF} disabled={timelineExporting}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
+                    style={{ color: timelineExporting ? "#94a3b8" : "#b91c1c", background: timelineExporting ? "transparent" : "#fee2e2", border: "none" }}
+                    title="Export Timeline PDF">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    {timelineExporting ? "..." : "Timeline PDF"}
+                  </button>
+                )}
+              </div>
+              <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
+            </>
           )}
 
           {/* Facebook connect / toggle — opens the right-side account & campaign browser */}
@@ -788,12 +796,30 @@ export default function Home() {
                   {saveState === "saving" && <span style={{ fontSize: 10, color: "#94a3b8" }}>บันทึก...</span>}
                   {saveState === "saved" && <span style={{ fontSize: 10, color: "#16a34a" }}>✓ บันทึกแล้ว</span>}
                 </div>
-                <input type="password" value={token} onChange={e => onTokenChange(e.target.value)} placeholder="EAAj..."
-                  className="w-full focus:outline-none transition-all duration-150"
-                  style={{ fontSize: 12, color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", background: "#f8fafc" }}
-                  onFocus={e => { e.currentTarget.style.borderColor = "#2563eb"; e.currentTarget.style.background = "#fff"; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}
-                />
+                <div className="relative">
+                  <input type={showToken ? "text" : "password"} value={token} onChange={e => onTokenChange(e.target.value)} placeholder="EAAj..."
+                    className="w-full focus:outline-none transition-all duration-150"
+                    style={{ fontSize: 12, color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 32px 8px 10px", background: "#f8fafc" }}
+                    onFocus={e => { e.currentTarget.style.borderColor = "#2563eb"; e.currentTarget.style.background = "#fff"; }}
+                    onBlur={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}
+                  />
+                  <button type="button" onClick={() => setShowToken(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+                    style={{ color: "#94a3b8", background: "none", border: "none", padding: 2, lineHeight: 0 }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#475569")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                    {showToken ? (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Ad IDs */}

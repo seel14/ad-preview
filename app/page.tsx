@@ -407,15 +407,36 @@ export default function Home() {
     }
   }
 
-  async function handleExportStructure() {
+  async function handleExportStructure(ids: string[], format: "png" | "pdf") {
     setStructureExporting(true);
     const prevActivePlatformId = activePlatformId;
+    const selectedPlatforms = structureNodes.filter(n => ids.includes(n.id));
     try {
       const { default: html2canvas } = await import("html2canvas-pro");
-      // One PNG per platform when there are multiple, otherwise the single whole-chart PNG (unchanged behavior).
-      // The chart canvas only renders the active platform, so switch platforms and capture sequentially.
-      if (structureNodes.length > 1) {
-        for (const platform of structureNodes) {
+      if (format === "pdf") {
+        const { default: jsPDF } = await import("jspdf");
+        const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+        let first = true;
+        for (const platform of selectedPlatforms) {
+          setActivePlatformId(platform.id);
+          await new Promise(r => setTimeout(r, 400));
+          const canvas = await captureStructureChartCanvas(html2canvas);
+          if (!canvas) continue;
+          if (!first) pdf.addPage();
+          first = false;
+          const pw = pdf.internal.pageSize.getWidth();
+          const ph = pdf.internal.pageSize.getHeight();
+          const imgW = canvas.width, imgH = canvas.height;
+          const ratio = Math.min(pw / imgW, ph / imgH);
+          const w = imgW * ratio, h = imgH * ratio;
+          pdf.addImage(canvas.toDataURL("image/png"), "PNG", (pw - w) / 2, (ph - h) / 2, w, h);
+        }
+        if (!first) {
+          const fileName = `${currentProject?.name ?? "ads"}-structure.pdf`;
+          pdf.save(fileName);
+        }
+      } else {
+        for (const platform of selectedPlatforms) {
           setActivePlatformId(platform.id);
           await new Promise(r => setTimeout(r, 400));
           const canvas = await captureStructureChartCanvas(html2canvas);
@@ -425,13 +446,6 @@ export default function Home() {
           link.href = canvas.toDataURL("image/png");
           link.click();
         }
-      } else {
-        const canvas = await captureStructureChartCanvas(html2canvas);
-        if (!canvas) return;
-        const link = document.createElement("a");
-        link.download = `${currentProject?.name ?? "ads"}-structure.png`;
-        link.href = canvas.toDataURL("image/png");
-        link.click();
       }
     } catch (e) {
       console.error(e);

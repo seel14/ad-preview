@@ -593,15 +593,17 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
   loadedAds: AdData[];
   savedLists?: { id: string; name: string; adIds: string[]; createdAt: number }[];
-  onExport: () => void; exporting: boolean;
-  // Controlled from the parent so export can switch platforms and capture #structure-chart
-  // one at a time — the same pattern used for ad-preview slides (currentIndex).
+  onExport: (ids: string[], format: "png" | "pdf") => void; exporting: boolean;
   activePlatformId?: string | null; onActivePlatformChange?: (id: string) => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportIds, setExportIds] = useState<Set<string>>(new Set());
+  const [exportFormat, setExportFormat] = useState<"png" | "pdf">("pdf");
+  const exportBtnRef = useRef<HTMLDivElement>(null);
 
   // Trackpad pinch — browsers report pinch as a wheel event with ctrlKey:true.
   // A native (non-passive) listener is required since React's onWheel is passive
@@ -685,8 +687,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
 
             <div style={{ flex: 1 }} />
 
-            {/* Zoom controls — a wrapper around #structure-chart is scaled for on-screen
-                viewing only; export always captures the natural-size #structure-chart. */}
+            {/* Zoom controls */}
             {!exporting && (
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))} style={toolBtn("#64748b")}>−</button>
@@ -695,9 +696,89 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
               </div>
             )}
 
-            <button onClick={onExport} disabled={exporting || nodes.length === 0} style={toolBtn("#dc2626", exporting || nodes.length === 0)}>
-              {exporting ? "Exporting..." : "Export รูป"}
-            </button>
+            {/* Export picker */}
+            <div ref={exportBtnRef} style={{ position: "relative" }}>
+              <button
+                disabled={exporting || nodes.length === 0}
+                style={toolBtn("#dc2626", exporting || nodes.length === 0)}
+                onClick={() => {
+                  if (nodes.length === 0) return;
+                  setExportIds(new Set(nodes.map(n => n.id)));
+                  setExportOpen(o => !o);
+                }}>
+                {exporting ? "Exporting..." : "Export ▾"}
+              </button>
+
+              {exportOpen && !exporting && (
+                <>
+                  {/* backdrop */}
+                  <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setExportOpen(false)} />
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50,
+                    background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 14, minWidth: 220,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                      เลือก Platform ที่ต้องการ Export
+                    </div>
+
+                    {/* Select all / none */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      <button onClick={() => setExportIds(new Set(nodes.map(n => n.id)))}
+                        style={{ fontSize: 10, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        เลือกทั้งหมด
+                      </button>
+                      <span style={{ color: "#e2e8f0" }}>|</span>
+                      <button onClick={() => setExportIds(new Set())}
+                        style={{ fontSize: 10, color: "#94a3b8", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        ล้าง
+                      </button>
+                    </div>
+
+                    {/* Platform list */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                      {nodes.map(n => (
+                        <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "#334155" }}>
+                          <input type="checkbox" checked={exportIds.has(n.id)}
+                            onChange={e => setExportIds(prev => {
+                              const next = new Set(prev);
+                              e.target.checked ? next.add(n.id) : next.delete(n.id);
+                              return next;
+                            })} />
+                          <span style={{ fontWeight: 500 }}>{n.name || "Platform"}</span>
+                          <span style={{ color: "#94a3b8", fontSize: 10 }}>({n.children.reduce((s, c) => s + c.children.length, 0)} ads)</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {/* Format selector */}
+                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 10, marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Format</div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {(["pdf", "png"] as const).map(fmt => (
+                          <button key={fmt} onClick={() => setExportFormat(fmt)}
+                            style={{
+                              fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 6, cursor: "pointer",
+                              border: exportFormat === fmt ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0",
+                              background: exportFormat === fmt ? "#eff6ff" : "#f8fafc",
+                              color: exportFormat === fmt ? "#1e40af" : "#64748b",
+                            }}>
+                            {fmt.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={exportIds.size === 0}
+                      onClick={() => { setExportOpen(false); onExport([...exportIds], exportFormat); }}
+                      style={{ ...toolBtn("#dc2626", exportIds.size === 0), width: "100%", textAlign: "center" }}>
+                      Export {exportIds.size > 0 ? `${exportIds.size} Platform` : ""}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
             <div style={{ display: "inline-block", minWidth: "100%", transform: `scale(${zoom})`, transformOrigin: "top left" }}>

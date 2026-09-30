@@ -22,6 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.savedLists !== undefined) projects[idx].savedLists = body.savedLists;
   if (body.structure !== undefined) projects[idx].structure = body.structure;
   if (body.timeline !== undefined) projects[idx].timeline = body.timeline;
+  if (body.cachedAds !== undefined) projects[idx].cachedAds = body.cachedAds;
   projects[idx].updatedAt = Date.now();
 
   await saveProjects(session.user.partitionKey, projects);

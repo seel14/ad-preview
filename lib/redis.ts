@@ -40,6 +40,7 @@ export interface Project {
   savedLists?: SavedList[];
   structure?: StructureNode[];
   timeline?: TimelineEntry[];
+  cachedAds?: unknown[];
   createdAt: number;
   updatedAt: number;
 }

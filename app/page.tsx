@@ -147,7 +147,7 @@ export default function Home() {
   useEffect(() => {
     setToken(currentProject?.token ?? "");
     setAdIdsInput(currentProject?.adIds.join("\n") ?? "");
-    setAds([]);
+    setAds((currentProject?.cachedAds as AdData[] | undefined) ?? []);
     setCurrentIndex(0);
     setStatusMsg("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,6 +259,7 @@ export default function Home() {
     setAds(results);
     setStatusMsg("");
     setLoading(false);
+    await patchProject({ cachedAds: results });
   }
 
   // Save current ad IDs as a named list (update existing or create new, deduplicate)

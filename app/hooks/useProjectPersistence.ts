@@ -21,6 +21,7 @@ export interface Project {
   timeline?: TimelineEntry[];
   createdAt: number;
   updatedAt: number;
+  cachedAds?: unknown[];
 }
 
 // Owns the list of Projects, which one is active, and persisting changes to Redis

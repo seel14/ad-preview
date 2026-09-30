@@ -605,6 +605,30 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   const [exportFormat, setExportFormat] = useState<"png" | "pdf">("pdf");
   const exportBtnRef = useRef<HTMLDivElement>(null);
 
+  // Auto-link structure ad nodes to freshly loaded ads (by adId, else by name) and refresh
+  // their thumbnails, since stored FB image URLs expire.
+  useEffect(() => {
+    if (loadedAds.length === 0) return;
+    const byId = new Map(loadedAds.map(a => [a.id, a]));
+    const byName = new Map(loadedAds.map(a => [a.name.trim().toLowerCase(), a]));
+    let changed = false;
+    const walk = (list: StructureNode[]): StructureNode[] => list.map(n => {
+      if (n.type === "ad") {
+        const match = (n.meta?.adId && byId.get(n.meta.adId)) || byName.get(n.name.trim().toLowerCase());
+        if (!match) return n;
+        const thumb = getThumb(match);
+        if (n.meta?.adId === match.id && n.meta?.thumbnailUrl === thumb) return n;
+        changed = true;
+        return { ...n, meta: { ...n.meta, adId: match.id, thumbnailUrl: thumb } };
+      }
+      const children = walk(n.children);
+      return children.some((c, i) => c !== n.children[i]) ? { ...n, children } : n;
+    });
+    const next = walk(nodes);
+    if (changed) onChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedAds]);
+
   // Trackpad pinch — browsers report pinch as a wheel event with ctrlKey:true.
   // A native (non-passive) listener is required since React's onWheel is passive
   // by default and can't preventDefault the browser's own page-zoom on pinch.

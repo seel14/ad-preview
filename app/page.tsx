@@ -398,7 +398,7 @@ export default function Home() {
     setTimelineExporting(true);
     try {
       const pdf = await renderSectionsToPdf([{ kind: "timeline" }]);
-      const fileName = currentProject?.name ? `${currentProject.name}-timeline.pdf` : "timeline.pdf";
+      const fileName = exportFileName("Timeline", "pdf");
       pdf.save(fileName);
     } catch (e) {
       console.error(e);
@@ -406,6 +406,13 @@ export default function Home() {
     } finally {
       setTimelineExporting(false);
     }
+  }
+
+  // "<project> - <label> - <YYYY-MM-DD>.<ext>"; empty label = "<project> - <date>"
+  function exportFileName(label: string, ext: "pdf" | "png") {
+    const d = new Date();
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return [currentProject?.name || "Ad Preview", label, date].filter(Boolean).join(" - ") + `.${ext}`;
   }
 
   async function handleExportStructure(ids: string[], format: "png" | "pdf") {
@@ -433,7 +440,7 @@ export default function Home() {
           pdf.addImage(canvas.toDataURL("image/png"), "PNG", (pw - w) / 2, (ph - h) / 2, w, h);
         }
         if (!first) {
-          const fileName = `${currentProject?.name ?? "ads"}-structure.pdf`;
+          const fileName = exportFileName("Structure", "pdf");
           pdf.save(fileName);
         }
       } else {
@@ -443,7 +450,7 @@ export default function Home() {
           const canvas = await captureStructureChartCanvas(html2canvas);
           if (!canvas) continue;
           const link = document.createElement("a");
-          link.download = `${currentProject?.name ?? "ads"}-structure-${platform.name || platform.id}.png`;
+          link.download = exportFileName(`Structure - ${platform.name || platform.id}`, "png");
           link.href = canvas.toDataURL("image/png");
           link.click();
         }
@@ -463,7 +470,7 @@ export default function Home() {
     setExportMode(true);
     try {
       const pdf = await renderSectionsToPdf([{ kind: "ads", ads }]);
-      const fileName = currentProject?.name ? `${currentProject.name}.pdf` : "ad-preview.pdf";
+      const fileName = exportFileName("Ads Preview", "pdf");
       pdf.save(fileName);
       setStatusMsg("✅ Export PDF สำเร็จ");
     } catch (e) {
@@ -481,7 +488,7 @@ export default function Home() {
     setExportMode(true);
     try {
       const pdf = await renderSectionsToPdf([{ kind: "structure" }, { kind: "timeline" }, { kind: "ads", ads }]);
-      const fileName = currentProject?.name ? `${currentProject.name}-combined.pdf` : "ad-combined.pdf";
+      const fileName = exportFileName("", "pdf");
       pdf.save(fileName);
       setStatusMsg("✅ Export Combined PDF สำเร็จ");
     } catch (e) {
@@ -511,7 +518,7 @@ export default function Home() {
       }
 
       const pdf = await renderSectionsToPdf(sections);
-      const fileName = currentProject?.name ? `${currentProject.name}-combined-lists.pdf` : "ad-combined-lists.pdf";
+      const fileName = exportFileName("", "pdf");
       pdf.save(fileName);
       setStatusMsg("✅ Export Combined PDF สำเร็จ");
     } catch (e) {

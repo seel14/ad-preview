@@ -805,7 +805,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
             </div>
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
-            <div style={{ display: "inline-block", minWidth: "100%", transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            <div style={{ display: "inline-block", minWidth: "100%", transform: exporting ? "none" : `scale(${zoom})`, transformOrigin: "top left" }}>
               <div id="structure-chart" style={{ display: "inline-block", padding: 40 }}>
                 {!activePlatform
                   ? <div style={{ textAlign: "center", color: "#9ca3af", padding: 60, fontSize: 14 }}>กด <strong>+ Platform</strong> เพื่อเริ่มสร้าง Ads Structure</div>

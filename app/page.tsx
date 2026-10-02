@@ -267,6 +267,7 @@ async function captureStructureChartCanvas(html2canvas: (typeof import("html2can
 // (renderSectionsToPdf) walks this list instead of each export handler
 // re-implementing its own jsPDF/html2canvas/render-wait sequencing.
 type ExportSection =
+  | { kind: "cover" }
   | { kind: "structure"; platformIds?: string[] }
   | { kind: "timeline" }
   | { kind: "divider"; title: string; subtitle: string }
@@ -311,6 +312,7 @@ export default function Home() {
   const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
   const [customFont, setCustomFont] = useState("");
   const [dlgOpen, setDlgOpen] = useState(false);
+  const [dlgOrder, setDlgOrder] = useState<string[]>(["cover", "ads", "folders", "structure", "timeline"]);
   const [dlgAds, setDlgAds] = useState(true);
   const [dlgFolders, setDlgFolders] = useState(false);
   const [dlgStructure, setDlgStructure] = useState(true);
@@ -558,7 +560,7 @@ export default function Home() {
     const { default: html2canvas } = await import("html2canvas-pro");
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     let firstPage = true;
-    if (cover.enabled) {
+    if (cover.enabled && !sections.some(sec => sec.kind === "cover")) {
       addCoverPage(pdf, currentProject?.name || "Ad Preview", cover);
       firstPage = false;
     }
@@ -566,7 +568,11 @@ export default function Home() {
     const prevActivePlatformId = activePlatformId;
 
     for (const section of sections) {
-      if (section.kind === "structure") {
+      if (section.kind === "cover") {
+        if (!firstPage) pdf.addPage();
+        addCoverPage(pdf, currentProject?.name || "Ad Preview", cover);
+        firstPage = false;
+      } else if (section.kind === "structure") {
         const platforms = section.platformIds ? structureNodes.filter(n => section.platformIds!.includes(n.id)) : structureNodes;
         if (platforms.length === 0) continue;
         setStatusMsg("กำลัง render Structure...");
@@ -840,11 +846,11 @@ export default function Home() {
     const platformIds = dlgStructure ? [...dlgPlatformIds] : [];
     const useAds = dlgAds && ads.length > 0;
     const useTimeline = dlgTimeline && timeline.length > 0;
-    const parts: string[] = [];
-    if (useAds) parts.push("Ads Preview");
-    if (lists.length) parts.push("Ads Grid");
-    if (platformIds.length) parts.push("Structure");
-    if (useTimeline) parts.push("Timeline");
+    const active: Record<string, boolean> = {
+      ads: useAds, folders: lists.length > 0, structure: platformIds.length > 0, timeline: useTimeline,
+    };
+    const partLabel: Record<string, string> = { ads: "Ads Preview", folders: "Ads Grid", structure: "Structure", timeline: "Timeline" };
+    const parts = dlgOrder.filter(k => active[k]).map(k => partLabel[k]);
     if (parts.length === 0 && !cover.enabled) return;
     if (lists.length && !token.trim()) { alert("ต้องมี Token เพื่อโหลด Ads ใน Folder"); return; }
 
@@ -854,14 +860,19 @@ export default function Home() {
     const originalAds = ads;
     try {
       const sections: ExportSection[] = [];
-      if (useAds) sections.push({ kind: "ads", ads });
-      for (const list of lists) {
-        setStatusMsg(`กำลังโหลด "${list.name}"...`);
-        const listAds = await loadAdsForIds(list.adIds, token, msg => setStatusMsg(`${list.name}: ${msg}`));
-        sections.push({ kind: "grid", title: list.name, ads: listAds });
+      for (const key of dlgOrder) {
+        if (key === "cover" && cover.enabled) sections.push({ kind: "cover" });
+        else if (key === "ads" && useAds) sections.push({ kind: "ads", ads });
+        else if (key === "folders") {
+          for (const list of lists) {
+            setStatusMsg(`กำลังโหลด "${list.name}"...`);
+            const listAds = await loadAdsForIds(list.adIds, token, msg => setStatusMsg(`${list.name}: ${msg}`));
+            sections.push({ kind: "grid", title: list.name, ads: listAds });
+          }
+        }
+        else if (key === "structure" && platformIds.length) sections.push({ kind: "structure", platformIds });
+        else if (key === "timeline" && useTimeline) sections.push({ kind: "timeline" });
       }
-      if (platformIds.length) sections.push({ kind: "structure", platformIds });
-      if (useTimeline) sections.push({ kind: "timeline" });
 
       const pdf = await renderSectionsToPdf(sections);
       pdf.save(exportFileName(parts.length === 1 ? parts[0] : "", "pdf"));
@@ -1603,52 +1614,54 @@ export default function Home() {
           <div onClick={e => e.stopPropagation()}
             style={{ width: 400, maxHeight: "85vh", overflowY: "auto", background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>Export PDF</div>
-            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 14 }}>เลือกสิ่งที่ต้องการรวมในไฟล์เดียว (เรียงตามลำดับด้านล่าง)</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 14 }}>เลือกสิ่งที่ต้องการรวมในไฟล์เดียว (ใช้ปุ่ม ▲▼ เพื่อเรียงลำดับ)</div>
 
-            {[
-              { key: "cover", label: "หน้าปก", sub: "ตั้งสีได้ที่ปุ่ม \"หน้าปก\"", checked: cover.enabled, disabled: false, onChange: (v: boolean) => updateCover({ enabled: v }) },
-              { key: "ads", label: "Ad Preview รายตัว", sub: ads.length ? `${ads.length} ads ที่โหลดอยู่ (1 ad ต่อหน้า)` : "ยังไม่ได้โหลด Ads", checked: dlgAds, disabled: ads.length === 0, onChange: setDlgAds },
-              { key: "folders", label: "Ad Preview Folder", sub: savedLists.length ? "เรียงเป็นตาราง พร้อมลิงก์ Preview" : "ยังไม่มี Saved List", checked: dlgFolders, disabled: savedLists.length === 0, onChange: setDlgFolders },
-            ].map(o => (
-              <div key={o.key} style={{ marginBottom: 10 }}>
-                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: o.disabled ? "not-allowed" : "pointer", opacity: o.disabled ? 0.45 : 1 }}>
-                  <input type="checkbox" style={{ marginTop: 3 }} checked={o.checked && !o.disabled} disabled={o.disabled} onChange={e => o.onChange(e.target.checked)} />
-                  <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{o.label}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{o.sub}</div></span>
-                </label>
-                {o.key === "folders" && dlgFolders && (
-                  <div style={{ margin: "6px 0 0 24px", display: "flex", flexDirection: "column", gap: 4 }}>
-                    {savedLists.map(l => (
-                      <label key={l.id} style={{ fontSize: 12, color: "#475569", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
-                        <input type="checkbox" checked={dlgListIds.has(l.id)} onChange={e => setDlgListIds(prev => { const n = new Set(prev); e.target.checked ? n.add(l.id) : n.delete(l.id); return n; })} />
-                        {l.name} <span style={{ color: "#94a3b8" }}>({l.adIds.length})</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: structureNodes.length ? "pointer" : "not-allowed", opacity: structureNodes.length ? 1 : 0.45 }}>
-                <input type="checkbox" style={{ marginTop: 3 }} checked={dlgStructure && structureNodes.length > 0} disabled={structureNodes.length === 0} onChange={e => setDlgStructure(e.target.checked)} />
-                <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Ads Structure</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{structureNodes.length ? "เลือก Channel ที่ต้องการ" : "ยังไม่มี Structure"}</div></span>
-              </label>
-              {dlgStructure && structureNodes.length > 0 && (
-                <div style={{ margin: "6px 0 0 24px", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {structureNodes.map(n => (
+            {dlgOrder.map((key, idx) => {
+              const arrows = (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: "auto" }}>
+                  {([[-1, "▲"], [1, "▼"]] as const).map(([dir, ch]) => {
+                    const off = idx + dir < 0 || idx + dir >= dlgOrder.length;
+                    return (
+                      <button key={ch} disabled={off} title={dir < 0 ? "เลื่อนขึ้น" : "เลื่อนลง"}
+                        onClick={() => setDlgOrder(prev => { const n = [...prev]; [n[idx], n[idx + dir]] = [n[idx + dir], n[idx]]; return n; })}
+                        className="cursor-pointer"
+                        style={{ fontSize: 8, lineHeight: 1, padding: "3px 6px", border: "1px solid #e2e8f0", borderRadius: 4, background: "#f8fafc", color: off ? "#cbd5e1" : "#475569" }}>{ch}</button>
+                    );
+                  })}
+                </div>
+              );
+              const row = (label: string, sub: string, checked: boolean, disabled: boolean, onChange: (v: boolean) => void) => (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, flex: 1 }}>
+                    <input type="checkbox" style={{ marginTop: 3 }} checked={checked && !disabled} disabled={disabled} onChange={e => onChange(e.target.checked)} />
+                    <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{label}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{sub}</div></span>
+                  </label>
+                  {arrows}
+                </div>
+              );
+              const sub = (children: React.ReactNode) => <div style={{ margin: "6px 0 0 24px", display: "flex", flexDirection: "column", gap: 4 }}>{children}</div>;
+              return (
+                <div key={key} style={{ marginBottom: 10 }}>
+                  {key === "cover" && row("หน้าปก", "ตั้งสีได้ที่ปุ่ม \"หน้าปก\"", cover.enabled, false, v => updateCover({ enabled: v }))}
+                  {key === "ads" && row("Ad Preview รายตัว", ads.length ? `${ads.length} ads ที่โหลดอยู่ (1 ad ต่อหน้า)` : "ยังไม่ได้โหลด Ads", dlgAds, ads.length === 0, setDlgAds)}
+                  {key === "folders" && row("Ad Preview Folder", savedLists.length ? "เรียงเป็นตาราง พร้อมลิงก์ Preview" : "ยังไม่มี Saved List", dlgFolders, savedLists.length === 0, setDlgFolders)}
+                  {key === "folders" && dlgFolders && sub(savedLists.map(l => (
+                    <label key={l.id} style={{ fontSize: 12, color: "#475569", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                      <input type="checkbox" checked={dlgListIds.has(l.id)} onChange={e => setDlgListIds(prev => { const n = new Set(prev); e.target.checked ? n.add(l.id) : n.delete(l.id); return n; })} />
+                      {l.name} <span style={{ color: "#94a3b8" }}>({l.adIds.length})</span>
+                    </label>
+                  )))}
+                  {key === "structure" && row("Ads Structure", structureNodes.length ? "เลือก Channel ที่ต้องการ" : "ยังไม่มี Structure", dlgStructure, structureNodes.length === 0, setDlgStructure)}
+                  {key === "structure" && dlgStructure && structureNodes.length > 0 && sub(structureNodes.map(n => (
                     <label key={n.id} style={{ fontSize: 12, color: "#475569", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
                       <input type="checkbox" checked={dlgPlatformIds.has(n.id)} onChange={e => setDlgPlatformIds(prev => { const x = new Set(prev); e.target.checked ? x.add(n.id) : x.delete(n.id); return x; })} />
                       {n.name || "Platform"}
                     </label>
-                  ))}
+                  )))}
+                  {key === "timeline" && row("Ad Timeline", timeline.length ? `${timeline.length} เหตุการณ์` : "ยังไม่มี Timeline", dlgTimeline, timeline.length === 0, setDlgTimeline)}
                 </div>
-              )}
-            </div>
-
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, cursor: timeline.length ? "pointer" : "not-allowed", opacity: timeline.length ? 1 : 0.45 }}>
-              <input type="checkbox" style={{ marginTop: 3 }} checked={dlgTimeline && timeline.length > 0} disabled={timeline.length === 0} onChange={e => setDlgTimeline(e.target.checked)} />
-              <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Ad Timeline</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{timeline.length ? `${timeline.length} เหตุการณ์` : "ยังไม่มี Timeline"}</div></span>
-            </label>
+              );
+            })}
 
             <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6 }}>Font</div>

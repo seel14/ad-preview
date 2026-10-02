@@ -85,13 +85,72 @@ function addDividerPage(pdf: PdfDoc, title: string, subtitle: string, isFirstPag
   pdf.text(subtitle, PDF_PAGE_W / 2, PDF_PAGE_H * 0.52, { align: "center" });
 }
 
+// ── Export font ─────────────────────────────────────────────────────────────
+type FontCfg =
+  | { kind: "default" }
+  | { kind: "google"; family: string }
+  | { kind: "upload"; family: string; dataUrl: string };
+
+const FONT_KEY = "adPreviewExportFont";
+const GOOGLE_FONT_PRESETS = ["Sarabun", "Prompt", "Kanit", "Noto Sans Thai", "Mitr", "Anuphan", "IBM Plex Sans Thai", "Inter", "Poppins"];
+
+let activeExportFont = "";
+function exportFontStack(weight: string, px: number) {
+  return `${weight} ${px}px ${activeExportFont ? `"${activeExportFont}", ` : ""}Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+}
+
+function loadStylesheet(href: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.dataset.exportFont = "1";
+    const t = setTimeout(() => resolve(false), 6000);
+    link.onload = () => { clearTimeout(t); resolve(true); };
+    link.onerror = () => { clearTimeout(t); link.remove(); resolve(false); };
+    document.head.appendChild(link);
+  });
+}
+
+// Loads the chosen font and (until the returned cleanup runs) forces it onto the capture targets and canvas text.
+async function applyExportFont(cfg: FontCfg): Promise<() => void> {
+  activeExportFont = "";
+  if (cfg.kind === "default") return () => {};
+  const family = cfg.family.replace(/["\\]/g, "");
+  try {
+    if (cfg.kind === "google") {
+      const q = family.replace(/ /g, "+");
+      const ok = await loadStylesheet(`https://fonts.googleapis.com/css2?family=${q}:wght@400;700&display=swap`)
+        || await loadStylesheet(`https://fonts.googleapis.com/css2?family=${q}&display=swap`);
+      if (!ok) throw new Error("font not found");
+    } else {
+      const face = new FontFace(family, `url(${cfg.dataUrl})`);
+      await face.load();
+      document.fonts.add(face);
+    }
+    await Promise.all([
+      document.fonts.load(`400 16px "${family}"`, "กA"),
+      document.fonts.load(`700 16px "${family}"`, "กA"),
+    ]);
+  } catch (e) {
+    console.error(e);
+    alert(`โหลดฟอนต์ "${family}" ไม่สำเร็จ — จะใช้ฟอนต์เริ่มต้นแทน`);
+    return () => {};
+  }
+  activeExportFont = family;
+  const style = document.createElement("style");
+  style.textContent = `#structure-chart, #structure-chart *, #timeline-chart, #timeline-chart *, #export-slide, #export-slide * { font-family: "${family}", Helvetica, Arial, sans-serif !important; }`;
+  document.head.appendChild(style);
+  return () => { style.remove(); activeExportFont = ""; };
+}
+
 const GRID_COLS = 5;
 
 // Renders text to a canvas so Thai titles survive (jsPDF built-in fonts have no Thai glyphs).
 function textToCanvas(text: string, px = 64, color = "#0f172a", weight = "bold"): HTMLCanvasElement {
   const c = document.createElement("canvas");
   const ctx = c.getContext("2d")!;
-  const font = `${weight} ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+  const font = exportFontStack(weight, px);
   ctx.font = font;
   c.width = Math.ceil(ctx.measureText(text).width) + 8;
   c.height = Math.ceil(px * 1.4);
@@ -140,7 +199,7 @@ function captionToCanvas(text: string, widthPx = 800, px = 34): HTMLCanvasElemen
   c.width = widthPx;
   c.height = Math.ceil(px * 1.35 * 2) + 8;
   const ctx = c.getContext("2d")!;
-  ctx.font = `bold ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+  ctx.font = exportFontStack("bold", px);
   ctx.fillStyle = "#0f172a";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
@@ -249,6 +308,8 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
+  const [customFont, setCustomFont] = useState("");
   const [dlgOpen, setDlgOpen] = useState(false);
   const [dlgAds, setDlgAds] = useState(true);
   const [dlgFolders, setDlgFolders] = useState(false);
@@ -263,6 +324,25 @@ export default function Home() {
       if (raw) setCover({ ...DEFAULT_COVER, ...JSON.parse(raw) });
     } catch {}
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FONT_KEY);
+      if (raw) setFontCfg(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  function updateFont(cfg: FontCfg) {
+    setFontCfg(cfg);
+    try { localStorage.setItem(FONT_KEY, JSON.stringify(cfg)); } catch { alert("ไฟล์ฟอนต์ใหญ่เกินกว่าจะจำไว้ในเบราว์เซอร์ — ใช้ได้เฉพาะรอบนี้"); }
+  }
+
+  function handleFontUpload(file: File) {
+    if (file.size > 3 * 1024 * 1024) { alert("ไฟล์ฟอนต์ใหญ่เกิน 3MB"); return; }
+    const reader = new FileReader();
+    reader.onload = () => updateFont({ kind: "upload", family: file.name.replace(/\.[^.]+$/, ""), dataUrl: String(reader.result) });
+    reader.readAsDataURL(file);
+  }
 
   function updateCover(patch: Partial<CoverStyle>) {
     setCover(prev => {
@@ -465,6 +545,15 @@ export default function Home() {
   // the html2canvas capture loop, and the tab/platform switching + render-wait sequencing
   // that every export handler used to reimplement independently.
   async function renderSectionsToPdf(sections: ExportSection[]) {
+    const restoreFont = await applyExportFont(fontCfg);
+    try {
+      return await renderSectionsToPdfInner(sections);
+    } finally {
+      restoreFont();
+    }
+  }
+
+  async function renderSectionsToPdfInner(sections: ExportSection[]) {
     const { default: jsPDF } = await import("jspdf");
     const { default: html2canvas } = await import("html2canvas-pro");
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -591,6 +680,7 @@ export default function Home() {
     setStructureExporting(true);
     const prevActivePlatformId = activePlatformId;
     const selectedPlatforms = structureNodes.filter(n => ids.includes(n.id));
+    const restoreFont = await applyExportFont(fontCfg);
     try {
       const { default: html2canvas } = await import("html2canvas-pro");
       if (format === "pdf") {
@@ -635,6 +725,7 @@ export default function Home() {
       console.error(e);
       alert("Export ล้มเหลว");
     } finally {
+      restoreFont();
       setActivePlatformId(prevActivePlatformId);
       setStructureExporting(false);
     }
@@ -1330,7 +1421,7 @@ export default function Home() {
                   <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: 4 }}>{currentIndex + 1} / {ads.length}</span>
                 </div>
 
-                <div ref={slideRef}>
+                <div ref={slideRef} id="export-slide">
                   <SlideView ad={ads[currentIndex]} index={currentIndex} exportMode={exportMode} albumImages={ads[currentIndex].albumImages} />
                 </div>
 
@@ -1558,6 +1649,36 @@ export default function Home() {
               <input type="checkbox" style={{ marginTop: 3 }} checked={dlgTimeline && timeline.length > 0} disabled={timeline.length === 0} onChange={e => setDlgTimeline(e.target.checked)} />
               <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Ad Timeline</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{timeline.length ? `${timeline.length} เหตุการณ์` : "ยังไม่มี Timeline"}</div></span>
             </label>
+
+            <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 12, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6 }}>Font</div>
+              <select
+                value={fontCfg.kind === "default" ? "default" : fontCfg.kind === "upload" ? "__upload" : fontCfg.family}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === "default") updateFont({ kind: "default" });
+                  else if (v !== "__upload") updateFont({ kind: "google", family: v });
+                }}
+                style={{ width: "100%", fontSize: 12, padding: "6px 8px", border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", marginBottom: 8 }}>
+                <option value="default">ค่าเริ่มต้น (Helvetica)</option>
+                {GOOGLE_FONT_PRESETS.map(f => <option key={f} value={f}>{f} (Google Fonts)</option>)}
+                {fontCfg.kind === "google" && !GOOGLE_FONT_PRESETS.includes(fontCfg.family) && <option value={fontCfg.family}>{fontCfg.family} (Google Fonts)</option>}
+                {fontCfg.kind === "upload" && <option value="__upload">{fontCfg.family} (ไฟล์ที่อัปโหลด)</option>}
+              </select>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input value={customFont} onChange={e => setCustomFont(e.target.value)} placeholder="ชื่อ Google Font อื่น เช่น Noto Serif Thai"
+                  onKeyDown={e => { if (e.key === "Enter" && customFont.trim()) { updateFont({ kind: "google", family: customFont.trim() }); setCustomFont(""); } }}
+                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 8 }} />
+                <button onClick={() => { if (customFont.trim()) { updateFont({ kind: "google", family: customFont.trim() }); setCustomFont(""); } }}
+                  className="cursor-pointer" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569" }}>ใช้</button>
+              </div>
+              <label className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb" }}>
+                + อัปโหลดไฟล์ฟอนต์ (.ttf .otf .woff .woff2)
+                <input type="file" accept=".ttf,.otf,.woff,.woff2" style={{ display: "none" }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFontUpload(f); e.target.value = ""; }} />
+              </label>
+              <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>ใช้กับหน้าปก ชื่อใน Folder Grid, Ads Preview, Structure และ Timeline</div>
+            </div>
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setDlgOpen(false)} className="cursor-pointer" style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b" }}>ยกเลิก</button>

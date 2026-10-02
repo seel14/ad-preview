@@ -130,6 +130,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   campaigns?: { id: string; name: string; platform: string }[];
 }) {
   const [adding, setAdding] = useState(false);
+  const [otherOpen, setOtherOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string> });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
@@ -162,12 +163,14 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   function startAdd() {
     setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {} });
     setEditingId(null);
+    setOtherOpen(false);
     setAdding(true);
   }
 
   function startEdit(entry: TimelineEntry) {
     setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {} });
     setEditingId(entry.id);
+    setOtherOpen(false);
     setAdding(true);
   }
 
@@ -253,12 +256,28 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{editingId ? "แก้ไขเหตุการณ์" : "เพิ่มเหตุการณ์ใหม่"}</div>
             <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
-            <input type="text" list="channel-presets" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}
-              placeholder="Channel เช่น Facebook, Google, TikTok (ไม่บังคับ)"
-              style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
-            <datalist id="channel-presets">
-              {CHANNEL_PRESETS.map(c => <option key={c} value={c} />)}
-            </datalist>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {CHANNEL_PRESETS.map(c => {
+                const preset = c !== "Other";
+                const on = preset ? form.channel === c && !otherOpen : (otherOpen || (!!form.channel && !CHANNEL_PRESETS.includes(form.channel)));
+                return (
+                  <button key={c} type="button"
+                    onClick={() => {
+                      if (preset) { setOtherOpen(false); setForm(f => ({ ...f, channel: f.channel === c ? "" : c, details: f.channel === c ? f.details : {} })); }
+                      else { setOtherOpen(true); setForm(f => CHANNEL_PRESETS.includes(f.channel) ? { ...f, channel: "", details: {} } : f); }
+                    }}
+                    style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+                      border: on ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: on ? "#eff6ff" : "#fff", color: on ? "#1e40af" : "#64748b" }}>
+                    {c === "Other" ? "อื่นๆ" : c}
+                  </button>
+                );
+              })}
+            </div>
+            {(otherOpen || (!!form.channel && !CHANNEL_PRESETS.includes(form.channel))) && (
+              <input type="text" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}
+                placeholder="พิมพ์ชื่อ Channel"
+                style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
+            )}
             {campaigns.length > 0 && (() => {
               const ch = form.channel.trim().toLowerCase();
               const matching = ch ? campaigns.filter(c => c.platform.toLowerCase().includes(ch)) : [];

@@ -176,8 +176,10 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setEditingId(null);
   }
 
+  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()));
+
   function saveForm() {
-    if (!form.date || !form.title.trim()) return;
+    if (!canSave) return;
     // Only fields the user explicitly added (via the dropdown) are kept, so an untouched
     // field never gets saved as an empty value.
     const details: Record<string, string> = {};
@@ -276,9 +278,6 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 </select>
               );
             })()}
-            <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              placeholder="หัวข้อ เช่น ปรับ Budget เพิ่ม 20%"
-              style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
 
             {/* Sub-topics per channel — toggle the ones that changed, then fill in what changed */}
             {fieldsForChannel(form.channel.trim()).length > 0 && (() => {
@@ -320,8 +319,8 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             })()}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={cancelForm} style={{ fontSize: 12, color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}>ยกเลิก</button>
-              <button onClick={saveForm} disabled={!form.date || !form.title.trim()}
-                style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: (!form.date || !form.title.trim()) ? "#94a3b8" : "#2563eb", border: "none", borderRadius: 6, padding: "6px 14px", cursor: (!form.date || !form.title.trim()) ? "default" : "pointer" }}>
+              <button onClick={saveForm} disabled={!canSave}
+                style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: !canSave ? "#94a3b8" : "#2563eb", border: "none", borderRadius: 6, padding: "6px 14px", cursor: !canSave ? "default" : "pointer" }}>
                 บันทึก
               </button>
             </div>
@@ -357,7 +356,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                     )}
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginTop: 2 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{entry.title}</div>
+                    {entry.title && <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{entry.title}</div>}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
                         onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
@@ -431,7 +430,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                             {cg.entries.map((entry, ei) => (
                               <div key={entry.id} className="group">
                                 {ei > 0 && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
-                                <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>
+                                {entry.title && <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
                                 {entry.description && (
                                   <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                                 )}

@@ -31,14 +31,108 @@ const ACTION_STYLE: Record<ShareChange["action"], { label: string; bg: string; f
   moved: { label: "ย้าย", bg: "#ede9fe", fg: "#5b21b6" },
 };
 
+type Seg = { t: "eq" | "add" | "del"; v: string };
+
+// Character-level diff (Thai has no word spaces), with tiny coincidental matches folded into the change.
+function diffText(a: string, b: string): Seg[] {
+  let pre = 0;
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
+  let suf = 0;
+  while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  const A = a.slice(pre, a.length - suf);
+  const B = b.slice(pre, b.length - suf);
+  const segs: Seg[] = [];
+  if (pre) segs.push({ t: "eq", v: a.slice(0, pre) });
+
+  if (A.length * B.length > 6_000_000) {
+    if (A) segs.push({ t: "del", v: A });
+    if (B) segs.push({ t: "add", v: B });
+  } else {
+    const n = A.length, m = B.length, w = m + 1;
+    const dp = new Uint16Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
+      dp[i * w + j] = A[i] === B[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+    }
+    const ops: Seg[] = [];
+    const push = (t: Seg["t"], c: string) => { const l = ops[ops.length - 1]; if (l && l.t === t) l.v += c; else ops.push({ t, v: c }); };
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (A[i] === B[j]) { push("eq", A[i]); i++; j++; }
+      else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) { push("del", A[i]); i++; }
+      else { push("add", B[j]); j++; }
+    }
+    while (i < n) push("del", A[i++]);
+    while (j < m) push("add", B[j++]);
+    // fold short equal runs sandwiched between changes into del+add so the highlight reads as one edit
+    const out: Seg[] = [];
+    for (let k = 0; k < ops.length; k++) {
+      const o = ops[k];
+      if (o.t === "eq" && o.v.length < 3 && k > 0 && k < ops.length - 1) { out.push({ t: "del", v: o.v }, { t: "add", v: o.v }); }
+      else out.push(o);
+    }
+    // regroup: within each run of non-eq segments, put all deletions first then additions
+    let buf: Seg[] = [];
+    const flush = () => {
+      if (!buf.length) return;
+      const d = buf.filter(x => x.t === "del").map(x => x.v).join("");
+      const ad = buf.filter(x => x.t === "add").map(x => x.v).join("");
+      if (d) segs.push({ t: "del", v: d });
+      if (ad) segs.push({ t: "add", v: ad });
+      buf = [];
+    };
+    for (const o of out) { if (o.t === "eq") { flush(); segs.push(o); } else buf.push(o); }
+    flush();
+  }
+  if (suf) segs.push({ t: "eq", v: a.slice(a.length - suf) });
+  return segs;
+}
+
+function TextDiff({ from, to }: { from: string; to: string }) {
+  const [mode, setMode] = useState<"diff" | "new">("diff");
+  const [copied, setCopied] = useState(false);
+  const segs = mode === "diff" ? diffText(from, to) : [];
+  const box: React.CSSProperties = { whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, lineHeight: 1.6, color: "#1e293b", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", marginTop: 4, maxHeight: 320, overflowY: "auto" };
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {(["diff", "new"] as const).map(m => (
+          <button key={m} onClick={() => setMode(m)} className="cursor-pointer"
+            style={{ fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 9999, border: mode === m ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: mode === m ? "#eff6ff" : "#fff", color: mode === m ? "#1e40af" : "#64748b" }}>
+            {m === "diff" ? "เทียบการแก้ไข" : "ข้อความใหม่"}
+          </button>
+        ))}
+        <button onClick={async () => { await navigator.clipboard.writeText(to).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+          className="cursor-pointer" style={{ fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 9999, border: "1.5px solid #e2e8f0", background: "#fff", color: "#2563eb", marginLeft: "auto" }}>
+          {copied ? "คัดลอกแล้ว" : "คัดลอกข้อความใหม่"}
+        </button>
+      </div>
+      {mode === "diff" && (
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+          <span style={{ background: "#bbf7d0", color: "#14532d", padding: "0 4px", borderRadius: 3 }}>เพิ่ม</span>{" "}
+          <span style={{ background: "#fecaca", color: "#7f1d1d", padding: "0 4px", borderRadius: 3, textDecoration: "line-through" }}>ลบ</span>
+        </div>
+      )}
+      <div style={box}>
+        {mode === "new" ? (to || "(ว่าง)") : segs.map((g, i) =>
+          g.t === "eq" ? <span key={i}>{g.v}</span>
+          : g.t === "add" ? <span key={i} style={{ background: "#bbf7d0", color: "#14532d", borderRadius: 3 }}>{g.v}</span>
+          : <span key={i} style={{ background: "#fecaca", color: "#7f1d1d", textDecoration: "line-through", borderRadius: 3 }}>{g.v}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChangeLine({ c }: { c: ShareChange }) {
   const st = ACTION_STYLE[c.action];
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#334155", padding: "5px 0" }}>
       <span style={{ background: st.bg, color: st.fg, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 9999, flexShrink: 0, marginTop: 1 }}>{st.label}</span>
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontWeight: 600, wordBreak: "break-word" }}>{c.path}{c.field ? ` · ${c.field}` : ""}</div>
-        {(c.action === "renamed" || c.action === "updated" || c.action === "moved") && (
+        {c.area === "ad" && c.action === "updated" ? (
+          <TextDiff from={c.from ?? ""} to={c.to ?? ""} />
+        ) : (c.action === "renamed" || c.action === "updated" || c.action === "moved") && (
           <div style={{ color: "#64748b", wordBreak: "break-word" }}>
             <span style={{ textDecoration: "line-through" }}>{c.from || "(ว่าง)"}</span> → <b style={{ color: "#0f172a" }}>{c.to || "(ว่าง)"}</b>
           </div>

@@ -208,7 +208,7 @@ async function captureStructureChartCanvas(html2canvas: (typeof import("html2can
 // (renderSectionsToPdf) walks this list instead of each export handler
 // re-implementing its own jsPDF/html2canvas/render-wait sequencing.
 type ExportSection =
-  | { kind: "structure" }
+  | { kind: "structure"; platformIds?: string[] }
   | { kind: "timeline" }
   | { kind: "divider"; title: string; subtitle: string }
   | { kind: "ads"; ads: AdData[] }
@@ -249,6 +249,13 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [dlgOpen, setDlgOpen] = useState(false);
+  const [dlgAds, setDlgAds] = useState(true);
+  const [dlgFolders, setDlgFolders] = useState(false);
+  const [dlgStructure, setDlgStructure] = useState(true);
+  const [dlgTimeline, setDlgTimeline] = useState(true);
+  const [dlgListIds, setDlgListIds] = useState<Set<string>>(new Set());
+  const [dlgPlatformIds, setDlgPlatformIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     try {
@@ -471,12 +478,13 @@ export default function Home() {
 
     for (const section of sections) {
       if (section.kind === "structure") {
-        if (structureNodes.length === 0) continue;
+        const platforms = section.platformIds ? structureNodes.filter(n => section.platformIds!.includes(n.id)) : structureNodes;
+        if (platforms.length === 0) continue;
         setStatusMsg("กำลัง render Structure...");
         setStructureExporting(true);
         setActiveTab("structure");
         await new Promise(r => setTimeout(r, 600));
-        for (const platform of structureNodes) {
+        for (const platform of platforms) {
           setActivePlatformId(platform.id);
           await new Promise(r => setTimeout(r, 400));
           const canvas = await captureStructureChartCanvas(html2canvas);
@@ -725,6 +733,60 @@ export default function Home() {
     }
   }
 
+  function openExportDialog() {
+    setDlgListIds(new Set(savedLists.map(l => l.id)));
+    setDlgPlatformIds(new Set(structureNodes.map(n => n.id)));
+    setDlgAds(ads.length > 0);
+    setDlgFolders(false);
+    setDlgStructure(structureNodes.length > 0);
+    setDlgTimeline(timeline.length > 0);
+    setDlgOpen(true);
+  }
+
+  // Builds one PDF from whatever the Export dialog has checked: cover, single ads, folder grids, structure, timeline.
+  async function handleExportCustom() {
+    const lists = dlgFolders ? savedLists.filter(l => dlgListIds.has(l.id)) : [];
+    const platformIds = dlgStructure ? [...dlgPlatformIds] : [];
+    const useAds = dlgAds && ads.length > 0;
+    const useTimeline = dlgTimeline && timeline.length > 0;
+    const parts: string[] = [];
+    if (useAds) parts.push("Ads Preview");
+    if (lists.length) parts.push("Ads Grid");
+    if (platformIds.length) parts.push("Structure");
+    if (useTimeline) parts.push("Timeline");
+    if (parts.length === 0 && !cover.enabled) return;
+    if (lists.length && !token.trim()) { alert("ต้องมี Token เพื่อโหลด Ads ใน Folder"); return; }
+
+    setDlgOpen(false);
+    setCombineExporting(true);
+    setExportMode(true);
+    const originalAds = ads;
+    try {
+      const sections: ExportSection[] = [];
+      if (useAds) sections.push({ kind: "ads", ads });
+      for (const list of lists) {
+        setStatusMsg(`กำลังโหลด "${list.name}"...`);
+        const listAds = await loadAdsForIds(list.adIds, token, msg => setStatusMsg(`${list.name}: ${msg}`));
+        sections.push({ kind: "grid", title: list.name, ads: listAds });
+      }
+      if (platformIds.length) sections.push({ kind: "structure", platformIds });
+      if (useTimeline) sections.push({ kind: "timeline" });
+
+      const pdf = await renderSectionsToPdf(sections);
+      pdf.save(exportFileName(parts.length === 1 ? parts[0] : "", "pdf"));
+      setStatusMsg("✅ Export PDF สำเร็จ");
+    } catch (e) {
+      console.error(e);
+      setStatusMsg("❌ Export ล้มเหลว");
+    } finally {
+      setAds(originalAds);
+      setCurrentIndex(0);
+      setCombineExporting(false);
+      setExportMode(false);
+      setTimeout(() => setStatusMsg(""), 3000);
+    }
+  }
+
   // ---- Loading / login states ----
   const loginBg = {
     background: "radial-gradient(ellipse at 60% 20%, #dbeafe 0%, #eff6ff 40%, #f0f9ff 100%)",
@@ -843,6 +905,15 @@ export default function Home() {
 
         {/* Right: export actions + FB + user */}
         <div className="flex items-center gap-2">
+
+          {currentProject && (
+            <button onClick={openExportDialog} disabled={combineExporting}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-50"
+              style={{ color: "#fff", background: "#dc2626", border: "none" }}
+              title="เลือกสิ่งที่จะ Export เป็น PDF">
+              {combineExporting ? "กำลัง Export..." : "Export PDF"}
+            </button>
+          )}
 
           {/* PDF cover page settings */}
           {currentProject && (
@@ -1435,6 +1506,70 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {dlgOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setDlgOpen(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 400, maxHeight: "85vh", overflowY: "auto", background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>Export PDF</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 14 }}>เลือกสิ่งที่ต้องการรวมในไฟล์เดียว (เรียงตามลำดับด้านล่าง)</div>
+
+            {[
+              { key: "cover", label: "หน้าปก", sub: "ตั้งสีได้ที่ปุ่ม \"หน้าปก\"", checked: cover.enabled, disabled: false, onChange: (v: boolean) => updateCover({ enabled: v }) },
+              { key: "ads", label: "Ad Preview รายตัว", sub: ads.length ? `${ads.length} ads ที่โหลดอยู่ (1 ad ต่อหน้า)` : "ยังไม่ได้โหลด Ads", checked: dlgAds, disabled: ads.length === 0, onChange: setDlgAds },
+              { key: "folders", label: "Ad Preview Folder", sub: savedLists.length ? "เรียงเป็นตาราง พร้อมลิงก์ Preview" : "ยังไม่มี Saved List", checked: dlgFolders, disabled: savedLists.length === 0, onChange: setDlgFolders },
+            ].map(o => (
+              <div key={o.key} style={{ marginBottom: 10 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: o.disabled ? "not-allowed" : "pointer", opacity: o.disabled ? 0.45 : 1 }}>
+                  <input type="checkbox" style={{ marginTop: 3 }} checked={o.checked && !o.disabled} disabled={o.disabled} onChange={e => o.onChange(e.target.checked)} />
+                  <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{o.label}</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{o.sub}</div></span>
+                </label>
+                {o.key === "folders" && dlgFolders && (
+                  <div style={{ margin: "6px 0 0 24px", display: "flex", flexDirection: "column", gap: 4 }}>
+                    {savedLists.map(l => (
+                      <label key={l.id} style={{ fontSize: 12, color: "#475569", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                        <input type="checkbox" checked={dlgListIds.has(l.id)} onChange={e => setDlgListIds(prev => { const n = new Set(prev); e.target.checked ? n.add(l.id) : n.delete(l.id); return n; })} />
+                        {l.name} <span style={{ color: "#94a3b8" }}>({l.adIds.length})</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: structureNodes.length ? "pointer" : "not-allowed", opacity: structureNodes.length ? 1 : 0.45 }}>
+                <input type="checkbox" style={{ marginTop: 3 }} checked={dlgStructure && structureNodes.length > 0} disabled={structureNodes.length === 0} onChange={e => setDlgStructure(e.target.checked)} />
+                <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Ads Structure</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{structureNodes.length ? "เลือก Channel ที่ต้องการ" : "ยังไม่มี Structure"}</div></span>
+              </label>
+              {dlgStructure && structureNodes.length > 0 && (
+                <div style={{ margin: "6px 0 0 24px", display: "flex", flexDirection: "column", gap: 4 }}>
+                  {structureNodes.map(n => (
+                    <label key={n.id} style={{ fontSize: 12, color: "#475569", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                      <input type="checkbox" checked={dlgPlatformIds.has(n.id)} onChange={e => setDlgPlatformIds(prev => { const x = new Set(prev); e.target.checked ? x.add(n.id) : x.delete(n.id); return x; })} />
+                      {n.name || "Platform"}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, cursor: timeline.length ? "pointer" : "not-allowed", opacity: timeline.length ? 1 : 0.45 }}>
+              <input type="checkbox" style={{ marginTop: 3 }} checked={dlgTimeline && timeline.length > 0} disabled={timeline.length === 0} onChange={e => setDlgTimeline(e.target.checked)} />
+              <span><div style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Ad Timeline</div><div style={{ fontSize: 10, color: "#94a3b8" }}>{timeline.length ? `${timeline.length} เหตุการณ์` : "ยังไม่มี Timeline"}</div></span>
+            </label>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDlgOpen(false)} className="cursor-pointer" style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b" }}>ยกเลิก</button>
+              <button onClick={handleExportCustom} className="cursor-pointer font-semibold"
+                disabled={!cover.enabled && !(dlgAds && ads.length) && !(dlgFolders && dlgListIds.size) && !(dlgStructure && dlgPlatformIds.size) && !(dlgTimeline && timeline.length)}
+                style={{ fontSize: 12, padding: "7px 16px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", opacity: 1 }}>
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

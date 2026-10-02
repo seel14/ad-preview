@@ -8,6 +8,7 @@ export interface TimelineEntry {
   channel?: string; // e.g. "Facebook", "Google", "TikTok"
   title: string;
   description?: string;
+  campaign?: string; // campaign name picked from Ads Structure
   details?: Record<string, string>; // channel-specific fields, e.g. { Objective: "...", Target: "..." }
   createdAt: number;
 }
@@ -61,17 +62,20 @@ function ChannelIcon({ channel, size = 12 }: { channel: string; size?: number })
 
 // Which detail fields to show per channel, in order — customize here as new needs come up.
 const CHANNEL_FIELDS: Record<string, string[]> = {
-  Facebook: ["Objective", "Target", "Ads"],
-  Google: ["Bidding", "Text Ads"],
-  TikTok: ["Objective", "Ads"],
-  LINE: ["Ads", "Objective"],
+  Facebook: ["Target", "Budget", "Objective", "Ads"],
+  Google: ["Budget", "Bidding", "Keyword", "Text Ads"],
+  TikTok: ["Target", "Budget", "Objective", "Ads"],
+  LINE: ["Target", "Budget", "Objective", "Ads"],
 };
 function fieldsForChannel(channel: string): string[] {
   return CHANNEL_FIELDS[channel] ?? [];
 }
 
-function DetailsList({ details, align = "left" }: { details?: Record<string, string>; align?: "left" | "center" }) {
-  const entries = Object.entries(details ?? {}).filter(([, v]) => v);
+function DetailsList({ details, campaign, align = "left" }: { details?: Record<string, string>; campaign?: string; align?: "left" | "center" }) {
+  const entries: [string, string][] = [
+    ...(campaign ? [["Campaign", campaign] as [string, string]] : []),
+    ...Object.entries(details ?? {}).filter(([, v]) => v),
+  ];
   if (!entries.length) return null;
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2, alignItems: align === "center" ? "center" : "stretch" }}>
@@ -106,10 +110,10 @@ function formatDetails(details?: Record<string, string>): string {
 }
 
 function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
-  const header = ["Date", "Channel", "Title", "Description", "Details"].map(csvCell).join(",");
+  const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
   const rows = [...entries]
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map(e => [e.date, e.channel ?? "", e.title, e.description ?? "", formatDetails(e.details)].map(csvCell).join(","));
+    .map(e => [e.date, e.channel ?? "", e.campaign ?? "", e.title, e.description ?? "", formatDetails(e.details)].map(csvCell).join(","));
   // Prefix with a UTF-8 BOM so Thai text opens correctly in Excel
   const csv = "﻿" + [header, ...rows].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -121,12 +125,13 @@ function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Timeline({ entries, onChange, projectName }: {
+export default function Timeline({ entries, onChange, projectName, campaigns = [] }: {
   entries: TimelineEntry[]; onChange: (entries: TimelineEntry[]) => void; projectName?: string;
+  campaigns?: { id: string; name: string; platform: string }[];
 }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: "", channel: "", title: "", description: "", details: {} as Record<string, string> });
+  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string> });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
   const [filterFrom, setFilterFrom] = useState(() => {
     const now = new Date();
@@ -155,13 +160,13 @@ export default function Timeline({ entries, onChange, projectName }: {
   }
 
   function startAdd() {
-    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", title: "", description: "", details: {} });
+    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {} });
     setEditingId(null);
     setAdding(true);
   }
 
   function startEdit(entry: TimelineEntry) {
-    setForm({ date: entry.date, channel: entry.channel ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {} });
+    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {} });
     setEditingId(entry.id);
     setAdding(true);
   }
@@ -184,11 +189,11 @@ export default function Timeline({ entries, onChange, projectName }: {
 
     if (editingId) {
       onChange(entries.map(e => e.id === editingId
-        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined }
+        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined }
         : e));
     } else {
       onChange([...entries, {
-        id: uid(), date: form.date, channel: form.channel.trim() || undefined, title: form.title.trim(),
+        id: uid(), date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(),
         description: form.description.trim() || undefined, details: detailsOrUndefined, createdAt: Date.now(),
       }]);
     }
@@ -252,6 +257,25 @@ export default function Timeline({ entries, onChange, projectName }: {
             <datalist id="channel-presets">
               {CHANNEL_PRESETS.map(c => <option key={c} value={c} />)}
             </datalist>
+            {campaigns.length > 0 && (() => {
+              const ch = form.channel.trim().toLowerCase();
+              const matching = ch ? campaigns.filter(c => c.platform.toLowerCase().includes(ch)) : [];
+              const list = matching.length ? matching : campaigns;
+              const platforms = [...new Set(list.map(c => c.platform))];
+              const known = list.some(c => c.name === form.campaign);
+              return (
+                <select value={form.campaign} onChange={e => setForm(f => ({ ...f, campaign: e.target.value }))}
+                  style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: form.campaign ? "#0f172a" : "#64748b", background: "#fff" }}>
+                  <option value="">Campaign ที่แก้ไข (เลือกจาก Ads Structure, ไม่บังคับ)</option>
+                  {form.campaign && !known && <option value={form.campaign}>{form.campaign}</option>}
+                  {platforms.map(pl => (
+                    <optgroup key={pl} label={pl}>
+                      {list.filter(c => c.platform === pl).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              );
+            })()}
             <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="หัวข้อ เช่น ปรับ Budget เพิ่ม 20%"
               style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
@@ -259,44 +283,41 @@ export default function Timeline({ entries, onChange, projectName }: {
               placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)" rows={3}
               style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", resize: "vertical" }} />
 
-            {/* Channel-specific fields — add only the ones relevant this time (e.g. just
-                "Objective" if that's all that changed), not every field every time */}
+            {/* Sub-topics per channel — toggle the ones that changed, then fill in what changed */}
             {fieldsForChannel(form.channel.trim()).length > 0 && (() => {
               const availableFields = fieldsForChannel(form.channel.trim());
-              const addedFields = Object.keys(form.details).filter(f => availableFields.includes(f));
-              const remainingFields = availableFields.filter(f => !addedFields.includes(f));
+              const addedFields = availableFields.filter(f => f in form.details);
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>
-                    รายละเอียด {form.channel.trim()}
+                    แก้ไขอะไรใน {form.channel.trim()}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {availableFields.map(field => {
+                      const on = field in form.details;
+                      return (
+                        <button key={field} type="button"
+                          onClick={() => setForm(f => {
+                            const next = { ...f.details };
+                            if (field in next) delete next[field]; else next[field] = "";
+                            return { ...f, details: next };
+                          })}
+                          style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, cursor: "pointer",
+                            border: on ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: on ? "#eff6ff" : "#fff", color: on ? "#1e40af" : "#64748b" }}>
+                          {on ? "✓ " : "+ "}{field}
+                        </button>
+                      );
+                    })}
                   </div>
                   {addedFields.map(field => (
-                    <div key={field} style={{ display: "flex", gap: 6 }}>
+                    <div key={field} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{field}</span>
                       <input type="text" value={form.details[field] ?? ""}
                         onChange={e => setForm(f => ({ ...f, details: { ...f.details, [field]: e.target.value } }))}
-                        placeholder={field}
-                        style={{ flex: 1, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
-                      <button onClick={() => setForm(f => {
-                          const next = { ...f.details };
-                          delete next[field];
-                          return { ...f, details: next };
-                        })}
-                        style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 4px" }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                        ×
-                      </button>
+                        placeholder={`${field} เปลี่ยนเป็นอะไร`}
+                        style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", background: "#fff" }} />
                     </div>
                   ))}
-                  {remainingFields.length > 0 && (
-                    <select value="" onChange={e => {
-                        const field = e.target.value;
-                        if (field) setForm(f => ({ ...f, details: { ...f.details, [field]: "" } }));
-                      }}
-                      style={{ fontSize: 12, border: "1px dashed #cbd5e1", borderRadius: 7, padding: "7px 10px", color: "#64748b", background: "#fff" }}>
-                      <option value="">+ เพิ่มรายละเอียด...</option>
-                      {remainingFields.map(field => <option key={field} value={field}>{field}</option>)}
-                    </select>
-                  )}
                 </div>
               );
             })()}
@@ -354,7 +375,7 @@ export default function Timeline({ entries, onChange, projectName }: {
                   {entry.description && (
                     <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                   )}
-                  <DetailsList details={entry.details} />
+                  <DetailsList details={entry.details} campaign={entry.campaign} />
                 </div>
               </div>
             ))}
@@ -417,7 +438,7 @@ export default function Timeline({ entries, onChange, projectName }: {
                                 {entry.description && (
                                   <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                                 )}
-                                <DetailsList details={entry.details} align="center" />
+                                <DetailsList details={entry.details} campaign={entry.campaign} align="center" />
                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>
                                   <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
                                     onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>

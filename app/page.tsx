@@ -1466,7 +1466,8 @@ export default function Home() {
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             {currentProject ? (
-              <Timeline entries={timeline} onChange={handleTimelineChange} projectName={currentProject?.name} />
+              <Timeline entries={timeline} onChange={handleTimelineChange} projectName={currentProject?.name}
+                campaigns={structureNodes.flatMap(pl => pl.children.filter(c => c.type === "campaign").map(c => ({ id: c.id, name: c.name, platform: pl.name })))} />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
                 เลือก Project ก่อน

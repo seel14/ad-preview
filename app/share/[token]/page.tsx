@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import AdsStructure, { type StructureNode } from "../../components/AdsStructure";
 import { normalizeCreative, type RawCreative } from "@/lib/normalizeCreative";
@@ -157,6 +157,21 @@ function NodeRow({ node, ops }: { node: StructureNode; ops: Ops }) {
 
 // ── Ad preview cards ─────────────────────────────────────────────────────────
 
+function AutoTextarea({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight + 2, 200)}px`;
+  }, [value]);
+  return (
+    <textarea ref={ref} value={value} onChange={e => onChange(e.target.value)}
+      className="mt-1 w-full text-[15px] leading-relaxed font-normal text-slate-800 border-2 border-slate-200 focus:border-blue-400 outline-none rounded-lg px-3 py-2.5 resize-y"
+      style={{ minHeight: 200 }} />
+  );
+}
+
 function AdCard({ ad, edit, onEdit }: { ad: ShareAd; edit?: AdEdit; onEdit: (e: AdEdit | undefined) => void }) {
   const orig = ad.creative ? normalizeCreative(ad.creative) : { body: "", headline: "", image: "", cta: "" };
   const origDesc = ad.creative?.object_story_spec?.link_data?.description ?? "";
@@ -183,9 +198,8 @@ function AdCard({ ad, edit, onEdit }: { ad: ShareAd; edit?: AdEdit; onEdit: (e: 
           <div className="text-sm font-semibold text-slate-800 truncate">{ad.name}</div>
           {edited && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 shrink-0">แก้ไขแล้ว</span>}
         </div>
-        <label className="text-[11px] font-semibold text-slate-500">Primary text
-          <textarea value={val("body", orig.body)} onChange={e => set("body", orig.body, e.target.value)} rows={3}
-            className="mt-1 w-full text-sm font-normal text-slate-800 border border-slate-200 rounded-lg px-2.5 py-2 resize-y" />
+        <label className="text-xs font-bold text-slate-600">Primary text (Caption)
+          <AutoTextarea value={val("body", orig.body)} onChange={v => set("body", orig.body, v)} />
         </label>
         <label className="text-[11px] font-semibold text-slate-500">Headline
           <input value={val("headline", orig.headline)} onChange={e => set("headline", orig.headline, e.target.value)}

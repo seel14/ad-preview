@@ -102,29 +102,62 @@ function textToCanvas(text: string, px = 64): HTMLCanvasElement {
   return c;
 }
 
-// One grid page: list title on top, up to GRID_COLS ad cards in a row, each with its share link underneath.
-function addGridPage(pdf: PdfDoc, title: string, cards: { canvas: HTMLCanvasElement; link: string | null }[], isFirstPage: boolean) {
+// Centered, wrapped (max 2 lines) caption rendered to a canvas so Thai names work in the PDF.
+function captionToCanvas(text: string, widthPx = 800, px = 34): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = widthPx;
+  c.height = Math.ceil(px * 1.35 * 2) + 8;
+  const ctx = c.getContext("2d")!;
+  ctx.font = `bold ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+  ctx.fillStyle = "#0f172a";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const lines: string[] = [];
+  let cur = "";
+  for (const ch of text) {
+    if (ctx.measureText(cur + ch).width > widthPx - 16) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  let shown = lines.slice(0, 2);
+  if (lines.length > 2) shown[1] = shown[1].slice(0, -1) + "…";
+  shown.forEach((l, k) => ctx.fillText(l, widthPx / 2, 4 + k * px * 1.35));
+  return c;
+}
+
+// One grid page: centered list title on top, up to GRID_COLS ad cards in a row, each with its name above
+// and its share link centered underneath.
+function addGridPage(pdf: PdfDoc, title: string, cards: { canvas: HTMLCanvasElement; link: string | null; name: string }[], isFirstPage: boolean) {
   if (!isFirstPage) pdf.addPage();
-  const pad = 10, gap = 8;
+  const pad = 8, gap = 5;
   const t = textToCanvas(title);
-  const th = 11;
-  pdf.addImage(t.toDataURL("image/png"), "PNG", pad, pad, th * (t.width / t.height), th);
+  const th = 10;
+  const tw = th * (t.width / t.height);
+  pdf.addImage(t.toDataURL("image/png"), "PNG", (PDF_PAGE_W - tw) / 2, pad, tw, th);
   const colW = (PDF_PAGE_W - pad * 2 - gap * (GRID_COLS - 1)) / GRID_COLS;
-  const top = pad + th + 12;
+  const nameTop = pad + th + 5;
   cards.forEach((card, i) => {
     const x = pad + i * (colW + gap);
-    const h = colW * (card.canvas.height / card.canvas.width);
-    pdf.addImage(card.canvas.toDataURL("image/jpeg", 0.92), "JPEG", x, top, colW, h);
+    const cap = captionToCanvas(card.name);
+    const capH = colW * (cap.height / cap.width);
+    pdf.addImage(cap.toDataURL("image/png"), "PNG", x, nameTop, colW, capH);
+    const top = nameTop + capH + 2;
+    const maxH = PDF_PAGE_H - top - pad - 7;
+    let w = colW;
+    let h = w * (card.canvas.height / card.canvas.width);
+    if (h > maxH) { h = maxH; w = h * (card.canvas.width / card.canvas.height); }
+    const ix = x + (colW - w) / 2;
+    pdf.addImage(card.canvas.toDataURL("image/jpeg", 0.92), "JPEG", ix, top, w, h);
     pdf.setDrawColor(226, 232, 240);
-    pdf.rect(x, top, colW, h);
+    pdf.rect(ix, top, w, h);
     if (card.link) {
       pdf.setFontSize(7);
       pdf.setFont("helvetica", "normal");
       pdf.setTextColor(0, 102, 204);
-      let label = card.link.replace(/^https?:\/\//, "");
+      const full = card.link.replace(/^https?:\/\//, "");
+      let label = full;
       while (label.length > 4 && pdf.getTextWidth(label) > colW) label = label.slice(0, -2);
-      if (label !== card.link.replace(/^https?:\/\//, "")) label += "…";
-      pdf.textWithLink(label, x, top + h + 5, { url: card.link });
+      if (label !== full) label += "…";
+      pdf.textWithLink(label, x + colW / 2, top + h + 5, { url: card.link, align: "center" });
       pdf.setTextColor(0, 0, 0);
     }
   });
@@ -419,7 +452,7 @@ export default function Home() {
         setActiveTab("preview");
         setAds(section.ads);
         await new Promise(r => setTimeout(r, 400));
-        const cards: { canvas: HTMLCanvasElement; link: string | null }[] = [];
+        const cards: { canvas: HTMLCanvasElement; link: string | null; name: string }[] = [];
         for (let i = 0; i < section.ads.length; i++) {
           setCurrentIndex(i);
           setStatusMsg(`กำลัง render ${section.title} ${i + 1}/${section.ads.length}...`);
@@ -427,14 +460,17 @@ export default function Home() {
           const el = slideRef.current;
           if (!el) continue;
           const full = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" });
-          // Left half of the slide is the ad card; the right half is caption text we don't need here.
+          // Crop to just the ad card (centered in the slide's left half) so it fills the grid cell.
+          const halfW = full.width / 2;
+          const cropW = Math.floor(halfW * 0.7);
+          const cropX = Math.floor((halfW - cropW) / 2);
           const half = document.createElement("canvas");
-          half.width = Math.floor(full.width / 2);
+          half.width = cropW;
           half.height = full.height;
-          half.getContext("2d")!.drawImage(full, 0, 0, half.width, full.height, 0, 0, half.width, full.height);
+          half.getContext("2d")!.drawImage(full, cropX, 0, cropW, full.height, 0, 0, cropW, full.height);
           const ad = section.ads[i];
           const link = ad.shareLink ?? ad.previewHtml?.match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null;
-          cards.push({ canvas: half, link });
+          cards.push({ canvas: half, link, name: ad.name });
         }
         for (let i = 0; i < cards.length; i += GRID_COLS) {
           addGridPage(pdf, section.title, cards.slice(i, i + GRID_COLS), firstPage);

@@ -65,6 +65,7 @@ export interface AdPreview {
   creative: CreativeShape;
   albumImages: string[];
   previewHtml: string | null;
+  shareLink: string | null;
   page: { name: string; picture: string } | null;
 }
 
@@ -124,7 +125,7 @@ export async function getAds(
 export async function getAdPreview(adId: string, token: string): Promise<AdPreview> {
   const [ad, preview] = await Promise.all([
     graphFetch<CreativeShape>(
-      `${BASE}/${adId}?fields=id,name,status,campaign_id,adset_id,creative.thumbnail_width(1080).thumbnail_height(1080){id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,object_story_spec{link_data{message,name,description,picture,link,child_attachments{picture,link,name,description}},video_data{message,title,image_url},page_id},asset_feed_spec,call_to_action_type}&access_token=${token}`
+      `${BASE}/${adId}?fields=id,name,status,campaign_id,adset_id,preview_shareable_link,creative.thumbnail_width(1080).thumbnail_height(1080){id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,object_story_spec{link_data{message,name,description,picture,link,child_attachments{picture,link,name,description}},video_data{message,title,image_url},page_id},asset_feed_spec,call_to_action_type}&access_token=${token}`
     ),
     graphFetch<{ data?: { body?: string }[] }>(
       `${BASE}/${adId}/previews?ad_format=MOBILE_FEED_STANDARD&height=700&access_token=${token}`
@@ -195,6 +196,7 @@ export async function getAdPreview(adId: string, token: string): Promise<AdPrevi
     creative,
     albumImages,
     previewHtml: preview.data?.[0]?.body ?? null,
+    shareLink: (ad.preview_shareable_link as string | undefined) ?? preview.data?.[0]?.body?.match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null,
     page: page ? { name: page.name ?? "", picture: page.picture?.data?.url ?? "" } : null,
   };
 }

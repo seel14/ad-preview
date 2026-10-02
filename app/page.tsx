@@ -30,6 +30,7 @@ interface AdData {
     };
   };
   previewHtml: string | null;
+  shareLink?: string | null;
   albumImages?: string[];
   page?: { name: string; picture: string } | null;
 }
@@ -84,6 +85,51 @@ function addDividerPage(pdf: PdfDoc, title: string, subtitle: string, isFirstPag
   pdf.text(subtitle, PDF_PAGE_W / 2, PDF_PAGE_H * 0.52, { align: "center" });
 }
 
+const GRID_COLS = 4;
+
+// Renders text to a canvas so Thai titles survive (jsPDF built-in fonts have no Thai glyphs).
+function textToCanvas(text: string, px = 64): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  const ctx = c.getContext("2d")!;
+  const font = `bold ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+  ctx.font = font;
+  c.width = Math.ceil(ctx.measureText(text).width) + 8;
+  c.height = Math.ceil(px * 1.4);
+  ctx.font = font;
+  ctx.fillStyle = "#0f172a";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 4, c.height / 2);
+  return c;
+}
+
+// One grid page: list title on top, up to GRID_COLS ad cards in a row, each with its share link underneath.
+function addGridPage(pdf: PdfDoc, title: string, cards: { canvas: HTMLCanvasElement; link: string | null }[], isFirstPage: boolean) {
+  if (!isFirstPage) pdf.addPage();
+  const pad = 10, gap = 8;
+  const t = textToCanvas(title);
+  const th = 11;
+  pdf.addImage(t.toDataURL("image/png"), "PNG", pad, pad, th * (t.width / t.height), th);
+  const colW = (PDF_PAGE_W - pad * 2 - gap * (GRID_COLS - 1)) / GRID_COLS;
+  const top = pad + th + 12;
+  cards.forEach((card, i) => {
+    const x = pad + i * (colW + gap);
+    const h = colW * (card.canvas.height / card.canvas.width);
+    pdf.addImage(card.canvas.toDataURL("image/jpeg", 0.92), "JPEG", x, top, colW, h);
+    pdf.setDrawColor(226, 232, 240);
+    pdf.rect(x, top, colW, h);
+    if (card.link) {
+      pdf.setFontSize(7);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(0, 102, 204);
+      let label = card.link.replace(/^https?:\/\//, "");
+      while (label.length > 4 && pdf.getTextWidth(label) > colW) label = label.slice(0, -2);
+      if (label !== card.link.replace(/^https?:\/\//, "")) label += "…";
+      pdf.textWithLink(label, x, top + h + 5, { url: card.link });
+      pdf.setTextColor(0, 0, 0);
+    }
+  });
+}
+
 // Captures whichever platform is currently active in Ads Structure (#structure-chart
 // only ever renders one platform at a time) — shared by the standalone PNG export
 // and the "structure" section of renderSectionsToPdf.
@@ -100,7 +146,8 @@ type ExportSection =
   | { kind: "structure" }
   | { kind: "timeline" }
   | { kind: "divider"; title: string; subtitle: string }
-  | { kind: "ads"; ads: AdData[] };
+  | { kind: "ads"; ads: AdData[] }
+  | { kind: "grid"; title: string; ads: AdData[] };
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -224,6 +271,7 @@ export default function Home() {
         adset: "",
         creative: {},
         previewHtml: `<iframe src="${url}"></iframe>`,
+        shareLink: url,
       });
     });
 
@@ -366,6 +414,33 @@ export default function Home() {
       } else if (section.kind === "divider") {
         addDividerPage(pdf, section.title, section.subtitle, firstPage);
         firstPage = false;
+      } else if (section.kind === "grid") {
+        if (section.ads.length === 0) continue;
+        setActiveTab("preview");
+        setAds(section.ads);
+        await new Promise(r => setTimeout(r, 400));
+        const cards: { canvas: HTMLCanvasElement; link: string | null }[] = [];
+        for (let i = 0; i < section.ads.length; i++) {
+          setCurrentIndex(i);
+          setStatusMsg(`กำลัง render ${section.title} ${i + 1}/${section.ads.length}...`);
+          await new Promise(r => setTimeout(r, 800));
+          const el = slideRef.current;
+          if (!el) continue;
+          const full = await html2canvas(el, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#ffffff" });
+          // Left half of the slide is the ad card; the right half is caption text we don't need here.
+          const half = document.createElement("canvas");
+          half.width = Math.floor(full.width / 2);
+          half.height = full.height;
+          half.getContext("2d")!.drawImage(full, 0, 0, half.width, full.height, 0, 0, half.width, full.height);
+          const ad = section.ads[i];
+          const link = ad.shareLink ?? ad.previewHtml?.match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null;
+          cards.push({ canvas: half, link });
+        }
+        for (let i = 0; i < cards.length; i += GRID_COLS) {
+          addGridPage(pdf, section.title, cards.slice(i, i + GRID_COLS), firstPage);
+          firstPage = false;
+        }
+        setCurrentIndex(0);
       } else {
         if (section.ads.length === 0) continue;
         setActiveTab("preview");
@@ -521,6 +596,32 @@ export default function Home() {
       const fileName = exportFileName("", "pdf");
       pdf.save(fileName);
       setStatusMsg("✅ Export Combined PDF สำเร็จ");
+    } catch (e) {
+      console.error(e);
+      setStatusMsg("❌ Export ล้มเหลว");
+    } finally {
+      setCombineExporting(false);
+      setExportMode(false);
+      setTimeout(() => setStatusMsg(""), 3000);
+    }
+  }
+
+  // One PDF with each selected Saved List laid out as a grid (GRID_COLS ads per page) with share links under each ad.
+  async function handleExportGridLists() {
+    const lists = savedLists.filter(l => selectedListIds.has(l.id));
+    if (!lists.length || !token.trim()) return;
+    setCombineExporting(true);
+    setExportMode(true);
+    try {
+      const sections: ExportSection[] = [];
+      for (const list of lists) {
+        setStatusMsg(`กำลังโหลด "${list.name}"...`);
+        const listAds = await loadAdsForIds(list.adIds, token, msg => setStatusMsg(`${list.name}: ${msg}`));
+        sections.push({ kind: "grid", title: list.name, ads: listAds });
+      }
+      const pdf = await renderSectionsToPdf(sections);
+      pdf.save(exportFileName("Ads Grid", "pdf"));
+      setStatusMsg("✅ Export Grid PDF สำเร็จ");
     } catch (e) {
       console.error(e);
       setStatusMsg("❌ Export ล้มเหลว");
@@ -949,6 +1050,12 @@ export default function Home() {
                         className="font-semibold rounded-md cursor-pointer disabled:opacity-50"
                         style={{ fontSize: 10, padding: "6px 0", color: "#fff", background: combineExporting ? "#94a3b8" : "#dc2626" }}>
                         {combineExporting ? "..." : "Combined PDF"}
+                      </button>
+                      <button onClick={handleExportGridLists} disabled={combineExporting}
+                        className="font-semibold rounded-md cursor-pointer disabled:opacity-50"
+                        style={{ fontSize: 10, padding: "6px 0", color: "#fff", background: combineExporting ? "#94a3b8" : "#7c3aed" }}
+                        title={`เรียง ${GRID_COLS} Ads ต่อหน้า พร้อมลิงก์ Preview ใต้ Ad`}>
+                        {combineExporting ? "..." : `Grid PDF (${GRID_COLS} Ads/หน้า)`}
                       </button>
                       <button onClick={() => setSelectedListIds(new Set())}
                         className="cursor-pointer" style={{ fontSize: 10, color: "#94a3b8", textAlign: "left" }}>

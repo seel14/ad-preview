@@ -131,6 +131,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
 }) {
   const [adding, setAdding] = useState(false);
   const [otherOpen, setOtherOpen] = useState(false);
+  const [campaignOther, setCampaignOther] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string> });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
@@ -164,6 +165,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {} });
     setEditingId(null);
     setOtherOpen(false);
+    setCampaignOther(false);
     setAdding(true);
   }
 
@@ -171,6 +173,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {} });
     setEditingId(entry.id);
     setOtherOpen(false);
+    setCampaignOther(false);
     setAdding(true);
   }
 
@@ -278,23 +281,37 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 placeholder="พิมพ์ชื่อ Channel"
                 style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
             )}
-            {campaigns.length > 0 && (() => {
+            {(() => {
               const ch = form.channel.trim().toLowerCase();
               const matching = ch ? campaigns.filter(c => c.platform.toLowerCase().includes(ch)) : [];
               const list = matching.length ? matching : campaigns;
               const platforms = [...new Set(list.map(c => c.platform))];
               const known = list.some(c => c.name === form.campaign);
+              const custom = campaignOther || (!!form.campaign && !known);
+              const inputStyle = { fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" } as const;
               return (
-                <select value={form.campaign} onChange={e => setForm(f => ({ ...f, campaign: e.target.value }))}
-                  style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: form.campaign ? "#0f172a" : "#64748b", background: "#fff" }}>
-                  <option value="">Campaign ที่แก้ไข (เลือกจาก Ads Structure, ไม่บังคับ)</option>
-                  {form.campaign && !known && <option value={form.campaign}>{form.campaign}</option>}
-                  {platforms.map(pl => (
-                    <optgroup key={pl} label={pl}>
-                      {list.filter(c => c.platform === pl).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
+                <>
+                  {list.length > 0 && (
+                    <select value={custom ? "__other" : form.campaign}
+                      onChange={e => {
+                        if (e.target.value === "__other") { setCampaignOther(true); if (known) setForm(f => ({ ...f, campaign: "" })); }
+                        else { setCampaignOther(false); setForm(f => ({ ...f, campaign: e.target.value })); }
+                      }}
+                      style={{ ...inputStyle, color: form.campaign || custom ? "#0f172a" : "#64748b", background: "#fff" }}>
+                      <option value="">Campaign ที่แก้ไข (เลือกจาก Ads Structure, ไม่บังคับ)</option>
+                      {platforms.map(pl => (
+                        <optgroup key={pl} label={pl}>
+                          {list.filter(c => c.platform === pl).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </optgroup>
+                      ))}
+                      <option value="__other">อื่นๆ (พิมพ์เอง)</option>
+                    </select>
+                  )}
+                  {(custom || list.length === 0) && (
+                    <input type="text" value={form.campaign} onChange={e => setForm(f => ({ ...f, campaign: e.target.value }))}
+                      placeholder="พิมพ์ชื่อ Campaign" style={inputStyle} />
+                  )}
+                </>
               );
             })()}
 

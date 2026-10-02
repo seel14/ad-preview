@@ -88,18 +88,50 @@ function addDividerPage(pdf: PdfDoc, title: string, subtitle: string, isFirstPag
 const GRID_COLS = 5;
 
 // Renders text to a canvas so Thai titles survive (jsPDF built-in fonts have no Thai glyphs).
-function textToCanvas(text: string, px = 64): HTMLCanvasElement {
+function textToCanvas(text: string, px = 64, color = "#0f172a", weight = "bold"): HTMLCanvasElement {
   const c = document.createElement("canvas");
   const ctx = c.getContext("2d")!;
-  const font = `bold ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
+  const font = `${weight} ${px}px Helvetica, Arial, "Thonburi", "Noto Sans Thai", sans-serif`;
   ctx.font = font;
   c.width = Math.ceil(ctx.measureText(text).width) + 8;
   c.height = Math.ceil(px * 1.4);
   ctx.font = font;
-  ctx.fillStyle = "#0f172a";
+  ctx.fillStyle = color;
   ctx.textBaseline = "middle";
   ctx.fillText(text, 4, c.height / 2);
   return c;
+}
+
+const COVER_KEY = "adPreviewCoverStyle";
+interface CoverStyle { enabled: boolean; bg: string; text: string }
+const DEFAULT_COVER: CoverStyle = { enabled: true, bg: "#1e40af", text: "#ffffff" };
+
+function formatCoverDate(d = new Date()) {
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  const n = m ? parseInt(m[1], 16) : 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Cover page: project name, then today's date on the next line, centered on a solid background.
+function addCoverPage(pdf: PdfDoc, title: string, style: CoverStyle) {
+  const [r, g, b] = hexToRgb(style.bg);
+  pdf.setFillColor(r, g, b);
+  pdf.rect(0, 0, PDF_PAGE_W, PDF_PAGE_H, "F");
+  const maxW = PDF_PAGE_W - 40;
+  const t = textToCanvas(title, 140, style.text);
+  let th = 26;
+  let tw = th * (t.width / t.height);
+  if (tw > maxW) { tw = maxW; th = tw * (t.height / t.width); }
+  const d = textToCanvas(formatCoverDate(), 70, style.text, "normal");
+  const dh = 11;
+  const dw = dh * (d.width / d.height);
+  const y0 = PDF_PAGE_H / 2 - (th + 6 + dh) / 2;
+  pdf.addImage(t.toDataURL("image/png"), "PNG", (PDF_PAGE_W - tw) / 2, y0, tw, th);
+  pdf.addImage(d.toDataURL("image/png"), "PNG", (PDF_PAGE_W - dw) / 2, y0 + th + 6, dw, dh);
 }
 
 // Centered, wrapped (max 2 lines) caption rendered to a canvas so Thai names work in the PDF.
@@ -215,6 +247,23 @@ export default function Home() {
   const [selectedListIds, setSelectedListIds] = useState<Set<string>>(new Set());
   const [combineExporting, setCombineExporting] = useState(false);
   const [activePlatformId, setActivePlatformId] = useState<string>("");
+  const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
+  const [coverOpen, setCoverOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COVER_KEY);
+      if (raw) setCover({ ...DEFAULT_COVER, ...JSON.parse(raw) });
+    } catch {}
+  }, []);
+
+  function updateCover(patch: Partial<CoverStyle>) {
+    setCover(prev => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(COVER_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
   const slideRef = useRef<HTMLDivElement>(null);
 
   const savedLists = currentProject?.savedLists ?? [];
@@ -413,6 +462,10 @@ export default function Home() {
     const { default: html2canvas } = await import("html2canvas-pro");
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     let firstPage = true;
+    if (cover.enabled) {
+      addCoverPage(pdf, currentProject?.name || "Ad Preview", cover);
+      firstPage = false;
+    }
     const prevActiveTab = activeTab;
     const prevActivePlatformId = activePlatformId;
 
@@ -536,6 +589,10 @@ export default function Home() {
         const { default: jsPDF } = await import("jspdf");
         const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
         let first = true;
+        if (cover.enabled) {
+          addCoverPage(pdf, currentProject?.name || "Ad Preview", cover);
+          first = false;
+        }
         for (const platform of selectedPlatforms) {
           setActivePlatformId(platform.id);
           await new Promise(r => setTimeout(r, 400));
@@ -786,6 +843,47 @@ export default function Home() {
 
         {/* Right: export actions + FB + user */}
         <div className="flex items-center gap-2">
+
+          {/* PDF cover page settings */}
+          {currentProject && (
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setCoverOpen(o => !o)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer"
+                style={{ color: "#475569", background: "#f8fafc", border: "1px solid #e2e8f0" }}
+                title="ตั้งค่าหน้าปก PDF">
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: cover.bg, border: "1px solid #cbd5e1", display: "inline-block" }} />
+                หน้าปก
+              </button>
+              {coverOpen && (
+                <>
+                  <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setCoverOpen(false)} />
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: 240, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 14 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#334155", fontWeight: 600, marginBottom: 12, cursor: "pointer" }}>
+                      <input type="checkbox" checked={cover.enabled} onChange={e => updateCover({ enabled: e.target.checked })} />
+                      ใส่หน้าปกใน PDF
+                    </label>
+                    {([["สีพื้นหลัง", "bg"], ["สีตัวอักษร", "text"]] as const).map(([label, key]) => (
+                      <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, opacity: cover.enabled ? 1 : 0.4 }}>
+                        <span style={{ fontSize: 12, color: "#64748b" }}>{label}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <input type="text" value={cover[key]} disabled={!cover.enabled}
+                            onChange={e => /^#[0-9a-fA-F]{0,6}$/.test(e.target.value) && updateCover({ [key]: e.target.value })}
+                            style={{ width: 72, fontSize: 11, padding: "3px 6px", border: "1px solid #e2e8f0", borderRadius: 6, fontFamily: "monospace" }} />
+                          <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(cover[key]) ? cover[key] : "#000000"} disabled={!cover.enabled}
+                            onChange={e => updateCover({ [key]: e.target.value })}
+                            style={{ width: 28, height: 24, padding: 0, border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer" }} />
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 4, aspectRatio: "297 / 210", background: cover.bg, borderRadius: 6, border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: cover.text, opacity: cover.enabled ? 1 : 0.4 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, maxWidth: "90%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentProject.name}</div>
+                      <div style={{ fontSize: 9, marginTop: 4 }}>{formatCoverDate()}</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Export zone — shown only when there's something to export */}
           {(ads.length > 0 || (activeTab === "timeline" && timeline.length > 0)) && (

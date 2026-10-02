@@ -589,12 +589,13 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
-export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange }: {
+export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false }: {
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
   loadedAds: AdData[];
   savedLists?: { id: string; name: string; adIds: string[]; createdAt: number }[];
   onExport: (ids: string[], format: "png" | "pdf") => void; exporting: boolean;
   activePlatformId?: string | null; onActivePlatformChange?: (id: string) => void;
+  hideExport?: boolean; autoFit?: boolean;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -604,6 +605,18 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   const [exportIds, setExportIds] = useState<Set<string>>(new Set());
   const [exportFormat, setExportFormat] = useState<"png" | "pdf">("pdf");
   const exportBtnRef = useRef<HTMLDivElement>(null);
+
+  // Fit the chart to the viewport width when first shown / when switching platform (client share page).
+  useEffect(() => {
+    if (!autoFit) return;
+    const t = setTimeout(() => {
+      const sc = scrollRef.current;
+      const ch = document.getElementById("structure-chart");
+      if (sc && ch && ch.offsetWidth > 0) setZoom(Math.max(0.25, Math.min(1, +((sc.clientWidth - 80) / ch.offsetWidth).toFixed(2))));
+    }, 200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFit, activePlatformId]);
 
   // Auto-link structure ad nodes to freshly loaded ads (by adId, else by name) and refresh
   // their thumbnails, since stored FB image URLs expire.
@@ -721,7 +734,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
             )}
 
             {/* Export picker */}
-            <div ref={exportBtnRef} style={{ position: "relative" }}>
+            {!hideExport && <div ref={exportBtnRef} style={{ position: "relative" }}>
               <button
                 disabled={exporting || nodes.length === 0}
                 style={toolBtn("#dc2626", exporting || nodes.length === 0)}
@@ -802,7 +815,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
                   </div>
                 </>
               )}
-            </div>
+            </div>}
           </div>
           <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
             <div style={{ display: "inline-block", minWidth: "100%", transform: exporting ? "none" : `scale(${zoom})`, transformOrigin: "top left" }}>

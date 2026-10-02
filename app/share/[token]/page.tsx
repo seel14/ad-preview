@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import type { StructureNode } from "../../components/AdsStructure";
+import AdsStructure, { type StructureNode } from "../../components/AdsStructure";
 import { normalizeCreative, type RawCreative } from "@/lib/normalizeCreative";
 
 interface ShareAd {
@@ -44,9 +44,6 @@ function moveInTree(nodes: StructureNode[], id: string, dir: -1 | 1): StructureN
     return next;
   }
   return nodes.map(n => ({ ...n, children: moveInTree(n.children ?? [], id, dir) }));
-}
-function countNodes(nodes: StructureNode[]): number {
-  return nodes.reduce((s, n) => s + 1 + countNodes(n.children ?? []), 0);
 }
 
 // ── Structure editor ─────────────────────────────────────────────────────────
@@ -217,6 +214,8 @@ export default function SharePage() {
   const [saved, setSaved] = useState<string>("");
   const [initial, setInitial] = useState("");
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<"chart" | "list">("chart");
+  const [platformId, setPlatformId] = useState("");
 
   useEffect(() => {
     fetch(`/api/share/${token}`)
@@ -230,6 +229,8 @@ export default function SharePage() {
         setAdEdits(d.adEdits ?? {});
         setClientName(d.clientName ?? "");
         setTab(d.scope === "structure" ? "structure" : "preview");
+        setView(window.innerWidth < 768 ? "list" : "chart");
+        setPlatformId(d.structure[0]?.id ?? "");
         setInitial(JSON.stringify([d.structure, d.adEdits ?? {}]));
       })
       .catch(e => setError(e.message));
@@ -316,12 +317,31 @@ export default function SharePage() {
         )}
 
         {tab === "structure" && showStructure && (
-          structure.length === 0
-            ? <div className="text-center text-slate-400 py-16">ยังไม่มี Ad Structure</div>
-            : <div className="flex flex-col gap-5">
-                <p className="text-xs text-slate-500">แก้ชื่อ งบ ลำดับ เพิ่มหรือลบรายการได้ตามต้องการ แล้วกดบันทึกด้านล่าง ({countNodes(structure)} รายการ)</p>
+          <>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-slate-500">
+                {view === "chart" ? "คลิกที่ชื่อหรืองบเพื่อแก้ไข ลากเพื่อสลับตำแหน่ง ใช้ + และ ✕ เพิ่ม/ลบ" : "แก้ชื่อ งบ ลำดับ เพิ่มหรือลบรายการได้ตามต้องการ"} แล้วกดบันทึกด้านล่าง
+              </p>
+              <div className="flex bg-slate-100 rounded-lg p-0.5">
+                {([["chart", "แผนภาพ"], ["list", "รายการ"]] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setView(k)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md ${view === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {view === "chart" ? (
+              <div className="rounded-xl border border-slate-200 overflow-hidden bg-white" style={{ height: "calc(100vh - 250px)", minHeight: 440 }}>
+                <AdsStructure nodes={structure} onChange={setStructure} loadedAds={data.ads as never} onExport={() => {}} exporting={false}
+                  activePlatformId={platformId} onActivePlatformChange={setPlatformId} hideExport autoFit />
+              </div>
+            ) : structure.length === 0 ? (
+              <div className="text-center text-slate-400 py-16">ยังไม่มี Ad Structure</div>
+            ) : (
+              <div className="flex flex-col gap-5">
                 {structure.map(n => <NodeRow key={n.id} node={n} ops={ops} />)}
               </div>
+            )}
+          </>
         )}
       </div>
 

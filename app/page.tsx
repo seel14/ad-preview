@@ -85,7 +85,7 @@ function addDividerPage(pdf: PdfDoc, title: string, subtitle: string, isFirstPag
   pdf.text(subtitle, PDF_PAGE_W / 2, PDF_PAGE_H * 0.52, { align: "center" });
 }
 
-const GRID_COLS = 4;
+const GRID_COLS = 5;
 
 // Renders text to a canvas so Thai titles survive (jsPDF built-in fonts have no Thai glyphs).
 function textToCanvas(text: string, px = 64): HTMLCanvasElement {

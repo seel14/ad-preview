@@ -58,6 +58,14 @@ export function useProjectPersistence(authStatus: string) {
       .finally(() => setProjectsLoading(false));
   }, [authStatus]);
 
+  const reloadProjects = useCallback(async () => {
+    const r = await fetch("/api/projects");
+    if (!r.ok) return null;
+    const data: Project[] = await r.json();
+    if (Array.isArray(data)) setProjects(data);
+    return data;
+  }, []);
+
   async function newProject(name: string) {
     const res = await fetch("/api/projects", {
       method: "POST",
@@ -130,5 +138,6 @@ export function useProjectPersistence(authStatus: string) {
     renameProject,
     patchProject,
     persistTokenAndAdIds,
+    reloadProjects,
   };
 }

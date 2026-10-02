@@ -7,6 +7,7 @@ import TokenGuide from "./components/TokenGuide";
 import AdsStructure, { type StructureNode } from "./components/AdsStructure";
 import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
+import ShareManager from "./components/ShareManager";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
 interface AdData {
@@ -289,7 +290,7 @@ export default function Home() {
 
   const {
     projects, currentId, setCurrentId, currentProject, projectsLoading, storageError, saveState,
-    newProject, deleteProject, renameProject, patchProject, persistTokenAndAdIds,
+    newProject, deleteProject, renameProject, patchProject, persistTokenAndAdIds, reloadProjects,
   } = useProjectPersistence(status);
 
   const [token, setToken] = useState("");
@@ -1007,6 +1008,15 @@ export default function Home() {
 
         {/* Right: export actions + FB + user */}
         <div className="flex items-center gap-2">
+
+          {currentProject && (
+            <ShareManager project={{ id: currentProject.id, name: currentProject.name }} ads={ads} structure={structureNodes}
+              onApplied={async () => {
+                const data = await reloadProjects();
+                const fresh = data?.find(x => x.id === currentId);
+                if (fresh?.cachedAds) setAds(fresh.cachedAds as AdData[]);
+              }} />
+          )}
 
           {currentProject && (
             <button onClick={openExportDialog} disabled={combineExporting}

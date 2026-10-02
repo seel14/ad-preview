@@ -157,18 +157,18 @@ function NodeRow({ node, ops }: { node: StructureNode; ops: Ops }) {
 
 // ── Ad preview cards ─────────────────────────────────────────────────────────
 
-function AutoTextarea({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function AutoTextarea({ value, onChange, minHeight = 200 }: { value: string; onChange: (v: string) => void; minHeight?: number }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight + 2, 200)}px`;
+    el.style.height = `${Math.max(el.scrollHeight + 2, minHeight)}px`;
   }, [value]);
   return (
     <textarea ref={ref} value={value} onChange={e => onChange(e.target.value)}
       className="mt-1 w-full text-[15px] leading-relaxed font-normal text-slate-800 border-2 border-slate-200 focus:border-blue-400 outline-none rounded-lg px-3 py-2.5 resize-y"
-      style={{ minHeight: 200 }} />
+      style={{ minHeight }} />
   );
 }
 
@@ -201,13 +201,11 @@ function AdCard({ ad, edit, onEdit }: { ad: ShareAd; edit?: AdEdit; onEdit: (e: 
         <label className="text-xs font-bold text-slate-600">Primary text (Caption)
           <AutoTextarea value={val("body", orig.body)} onChange={v => set("body", orig.body, v)} />
         </label>
-        <label className="text-[11px] font-semibold text-slate-500">Headline
-          <input value={val("headline", orig.headline)} onChange={e => set("headline", orig.headline, e.target.value)}
-            className="mt-1 w-full text-sm font-normal text-slate-800 border border-slate-200 rounded-lg px-2.5 py-2" />
+        <label className="text-xs font-bold text-slate-600">Headline
+          <AutoTextarea value={val("headline", orig.headline)} onChange={v => set("headline", orig.headline, v)} minHeight={76} />
         </label>
-        <label className="text-[11px] font-semibold text-slate-500">Description
-          <input value={val("description", origDesc)} onChange={e => set("description", origDesc, e.target.value)}
-            className="mt-1 w-full text-sm font-normal text-slate-800 border border-slate-200 rounded-lg px-2.5 py-2" />
+        <label className="text-xs font-bold text-slate-600">Description
+          <AutoTextarea value={val("description", origDesc)} onChange={v => set("description", origDesc, v)} minHeight={100} />
         </label>
         {edited && <button onClick={() => onEdit(undefined)} className="self-start text-xs text-slate-500 underline">คืนค่าเดิม</button>}
       </div>

@@ -279,9 +279,6 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="หัวข้อ เช่น ปรับ Budget เพิ่ม 20%"
               style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
-            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)" rows={3}
-              style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", resize: "vertical" }} />
 
             {/* Sub-topics per channel — toggle the ones that changed, then fill in what changed */}
             {fieldsForChannel(form.channel.trim()).length > 0 && (() => {

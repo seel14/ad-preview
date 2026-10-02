@@ -287,7 +287,7 @@ function ChildConnector({ isFirst, isLast, single }: { isFirst: boolean; isLast:
   return (
     <div style={{ position: "relative", height: 24, alignSelf: "stretch" }}>
       {!single && (
-        <div style={{ position: "absolute", top: 11, left: isFirst ? "50%" : 0, right: isLast ? "50%" : 0, height: 2, background: LINE_COLOR }} />
+        <div style={{ position: "absolute", top: 0, left: isFirst ? "calc(50% - 1px)" : 0, right: isLast ? "calc(50% - 1px)" : 0, height: 2, background: LINE_COLOR }} />
       )}
       <div style={{ position: "absolute", top: 0, bottom: 0, left: "calc(50% - 1px)", width: 2, background: LINE_COLOR }} />
     </div>

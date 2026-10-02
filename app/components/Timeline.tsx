@@ -336,42 +336,46 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             </div>
           </div>
         ) : layout === "vertical" ? (
-          <div id="timeline-chart" style={{ maxWidth: 560, margin: "0 auto", padding: 24, background: "#fff", borderRadius: 12 }}>
-            {sorted.map((entry, i) => (
-              <div key={entry.id} className="group" style={{ display: "flex", gap: 16 }}>
+          <div id="timeline-chart" style={{ maxWidth: 1100, margin: "0 auto", padding: 24, background: "#fff", borderRadius: 12 }}>
+            {dateGroups.map((group, i) => (
+              <div key={group.date} style={{ display: "flex", gap: 16 }}>
                 {/* Connector column */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 16, flexShrink: 0 }}>
                   <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#2563eb", marginTop: 4, flexShrink: 0 }} />
-                  {i < sorted.length - 1 && <div style={{ width: 2, flex: 1, background: "#e2e8f0", marginTop: 2 }} />}
+                  {i < dateGroups.length - 1 && <div style={{ width: 2, flex: 1, background: "#e2e8f0", marginTop: 2 }} />}
                 </div>
-                {/* Content */}
-                <div style={{ flex: 1, paddingBottom: 24 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3 }}>{formatDate(entry.date)}</span>
-                    {entry.channel && (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(entry.channel).bg, color: channelColor(entry.channel).text }}>
-                        <ChannelIcon channel={entry.channel} />
-                        {entry.channel}
-                      </span>
-                    )}
+                {/* Date + same-day events flowing to the right */}
+                <div style={{ flex: 1, paddingBottom: 24, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginBottom: 8 }}>{formatDate(group.date)}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+                    {group.entries.map(entry => (
+                      <div key={entry.id} className="group" style={{ width: 220, border: "1.5px solid #e2e8f0", borderRadius: 10, background: "#f8fafc", padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          {entry.channel ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(entry.channel).bg, color: channelColor(entry.channel).text }}>
+                              <ChannelIcon channel={entry.channel} />
+                              {entry.channel}
+                            </span>
+                          ) : <span />}
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                              onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                              แก้ไข
+                            </button>
+                            <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                              onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                              ลบ
+                            </button>
+                          </div>
+                        </div>
+                        {entry.title && <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
+                        {entry.description && (
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
+                        )}
+                        <DetailsList details={entry.details} campaign={entry.campaign} />
+                      </div>
+                    ))}
                   </div>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginTop: 2 }}>
-                    {entry.title && <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{entry.title}</div>}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                      <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                        แก้ไข
-                      </button>
-                      <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                        ลบ
-                      </button>
-                    </div>
-                  </div>
-                  {entry.description && (
-                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
-                  )}
-                  <DetailsList details={entry.details} campaign={entry.campaign} />
                 </div>
               </div>
             ))}

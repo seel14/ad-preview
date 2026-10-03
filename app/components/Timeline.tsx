@@ -93,6 +93,62 @@ function DetailsList({ details, campaign, channel, align = "left" }: { details?:
   );
 }
 
+function groupByChannel(entries: TimelineEntry[]): { channel: string; entries: TimelineEntry[] }[] {
+  const groups: { channel: string; entries: TimelineEntry[] }[] = [];
+  for (const entry of entries) {
+    const key = entry.channel ?? "";
+    const existing = groups.find(g => g.channel === key);
+    if (existing) existing.entries.push(entry);
+    else groups.push({ channel: key, entries: [entry] });
+  }
+  // keep entries of the same campaign next to each other inside a channel card
+  for (const g of groups) {
+    const order = [...new Set(g.entries.map(e => e.campaign ?? ""))];
+    g.entries.sort((a, b) => order.indexOf(a.campaign ?? "") - order.indexOf(b.campaign ?? ""));
+  }
+  return groups;
+}
+
+// One card per channel on a date: badge, then each entry (campaign shown once for consecutive same-campaign entries).
+function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: {
+  channel: string; entries: TimelineEntry[]; align: "left" | "center";
+  onEdit: (e: TimelineEntry) => void; onRemove: (id: string) => void; width: number | string;
+}) {
+  return (
+    <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 10, background: "#f8fafc", padding: "10px 12px 8px", textAlign: align, width, boxSizing: "border-box" }}>
+      {channel && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(channel).bg, color: channelColor(channel).text }}>
+          <ChannelIcon channel={channel} />
+          {channel}
+        </span>
+      )}
+      {entries.map((entry, ei) => {
+        const sameCampaignAsPrev = ei > 0 && !!entry.campaign && entries[ei - 1].campaign === entry.campaign;
+        return (
+          <div key={entry.id} className="group">
+            {ei > 0 && !sameCampaignAsPrev && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
+            {entry.title && <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
+            {entry.description && (
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
+            )}
+            <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align={align} />
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
+              <button onClick={() => onEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                แก้ไข
+              </button>
+              <button onClick={() => onRemove(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
+                ลบ
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -389,32 +445,9 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 <div style={{ flex: 1, paddingBottom: 24, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginBottom: 8 }}>{formatDate(group.date)}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
-                    {group.entries.map(entry => (
-                      <div key={entry.id} className="group" style={{ width: 220, border: "1.5px solid #e2e8f0", borderRadius: 10, background: "#f8fafc", padding: "10px 12px" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                          {entry.channel ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(entry.channel).bg, color: channelColor(entry.channel).text }}>
-                              <ChannelIcon channel={entry.channel} />
-                              {entry.channel}
-                            </span>
-                          ) : <span />}
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                            <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                              onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                              แก้ไข
-                            </button>
-                            <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                              onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                              ลบ
-                            </button>
-                          </div>
-                        </div>
-                        {entry.title && <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
-                        {entry.description && (
-                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
-                        )}
-                        <DetailsList details={entry.details} campaign={entry.campaign} channel={entry.channel} />
-                      </div>
+                    {groupByChannel(group.entries).map(cg => (
+                      <ChannelGroupCard key={cg.channel + cg.entries[0].id} channel={cg.channel} entries={cg.entries} align="left"
+                        onEdit={startEdit} onRemove={removeEntry} width={240} />
                     ))}
                   </div>
                 </div>
@@ -445,66 +478,12 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", letterSpacing: 0.3, marginTop: 10, marginBottom: 8 }}>{formatDate(group.date)}</div>
 
                   {/* Same-date events grouped by channel — same channel → one card */}
-                  {(() => {
-                    const channelGroups: { channel: string; entries: TimelineEntry[] }[] = [];
-                    for (const entry of group.entries) {
-                      const key = entry.channel ?? "";
-                      const existing = channelGroups.find(g => g.channel === key);
-                      if (existing) existing.entries.push(entry);
-                      else channelGroups.push({ channel: key, entries: [entry] });
-                    }
-                    // keep entries of the same campaign next to each other inside a channel card
-                    for (const g of channelGroups) {
-                      const order = [...new Set(g.entries.map(e => e.campaign ?? ""))];
-                      g.entries.sort((a, b) => order.indexOf(a.campaign ?? "") - order.indexOf(b.campaign ?? ""));
-                    }
-                    return (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                        {channelGroups.map(cg => (
-                          <div key={cg.channel + cg.entries[0].id} style={{
-                            border: "1.5px solid #e2e8f0",
-                            borderRadius: 10,
-                            background: "#f8fafc",
-                            padding: "10px 10px 8px",
-                            textAlign: "center",
-                            width: "100%",
-                            boxSizing: "border-box",
-                          }}>
-                            {cg.channel && (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 9999, background: channelColor(cg.channel).bg, color: channelColor(cg.channel).text }}>
-                                <ChannelIcon channel={cg.channel} />
-                                {cg.channel}
-                              </span>
-                            )}
-                            {/* If multiple entries share this channel, stack their content */}
-                            {cg.entries.map((entry, ei) => {
-                              const sameCampaignAsPrev = ei > 0 && !!entry.campaign && cg.entries[ei - 1].campaign === entry.campaign;
-                              return (
-                              <div key={entry.id} className="group">
-                                {ei > 0 && !sameCampaignAsPrev && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
-                                {entry.title && <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
-                                {entry.description && (
-                                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
-                                )}
-                                <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align="center" />
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>
-                                  <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                                    onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                                    แก้ไข
-                                  </button>
-                                  <button onClick={() => removeEntry(entry.id)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
-                                    onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
-                                    ลบ
-                                  </button>
-                                </div>
-                              </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                    {groupByChannel(group.entries).map(cg => (
+                      <ChannelGroupCard key={cg.channel + cg.entries[0].id} channel={cg.channel} entries={cg.entries} align="center"
+                        onEdit={startEdit} onRemove={removeEntry} width="100%" />
+                    ))}
+                  </div>
                 </div>
                 );
               })}

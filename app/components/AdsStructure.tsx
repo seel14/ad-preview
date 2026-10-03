@@ -52,6 +52,26 @@ function getThumb(ad: AdData): string {
   return normalizeCreative(ad.creative).image;
 }
 
+// Thumbnail that survives hosts without CORS headers (video thumbs): direct → same-origin proxy → placeholder.
+function SafeImg({ src, style, draggable }: { src: string; style?: React.CSSProperties; draggable?: boolean }) {
+  const exporting = useContext(ExportCtx);
+  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  useEffect(() => { setStage(0); }, [src]);
+  if (stage === 2) {
+    return (
+      <div style={{ ...style, display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6" }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      </div>
+    );
+  }
+  const proxied = `/api/proxy?url=${encodeURIComponent(src)}`;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={exporting || stage === 1 ? proxied : src} alt="" draggable={draggable} crossOrigin="anonymous" style={style}
+      onError={() => setStage(st => (st === 0 && !exporting ? 1 : 2))} />
+  );
+}
+
 // ── Drag state (global within component tree) ─────────────────────────────────
 interface DragCtxType {
   dragId: string | null;
@@ -215,7 +235,7 @@ function AdPicker({ loadedAds, existingAdIds, onSelect, onClose }: {
             onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
             onMouseLeave={e => (e.currentTarget.style.background = "")}>
             {thumb
-              ? <img src={thumb} alt="" crossOrigin="anonymous" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+              ? <SafeImg src={thumb} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
               : <div style={{ width: 44, height: 44, background: "#f3f4f6", borderRadius: 6, flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.name}</div>
@@ -268,7 +288,7 @@ function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
               background: "#e5e7eb", flexShrink: 0,
               boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
             }}>
-              <img src={src} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <SafeImg src={src} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
           ))}
           {extra > 0 && (
@@ -390,7 +410,7 @@ function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isO
         }}>
           <div style={{ width: "100%", aspectRatio: "1 / 1", overflow: "hidden", background: "#f3f4f6" }}>
             {thumb
-              ? <img src={thumb} alt="" draggable={false} crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              ? <SafeImg src={thumb} draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                 </div>}

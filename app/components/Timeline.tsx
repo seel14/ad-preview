@@ -71,14 +71,19 @@ function fieldsForChannel(channel: string): string[] {
   return CHANNEL_FIELDS[channel] ?? [];
 }
 
-function DetailsList({ details, campaign, align = "left" }: { details?: Record<string, string>; campaign?: string; align?: "left" | "center" }) {
-  const entries: [string, string][] = [
-    ...(campaign ? [["Campaign", campaign] as [string, string]] : []),
-    ...Object.entries(details ?? {}).filter(([, v]) => v),
-  ];
-  if (!entries.length) return null;
+function DetailsList({ details, campaign, channel, align = "left" }: { details?: Record<string, string>; campaign?: string; channel?: string; align?: "left" | "center" }) {
+  const entries = Object.entries(details ?? {}).filter(([, v]) => v);
+  if (!entries.length && !campaign) return null;
+  const color = channelColor(channel ?? "");
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2, alignItems: align === "center" ? "center" : "stretch" }}>
+      {campaign && (
+        <div style={{ marginBottom: 2 }}>
+          <span style={{ display: "inline-block", fontSize: 12, fontWeight: 800, padding: "2px 10px", borderRadius: 6, background: color.bg, color: color.text, lineHeight: 1.5 }}>
+            {campaign}
+          </span>
+        </div>
+      )}
       {entries.map(([k, v]) => (
         <div key={k} style={{ fontSize: 11, color: "#475569" }}>
           <span style={{ fontWeight: 600 }}>{k}:</span> {v}
@@ -408,7 +413,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                         {entry.description && (
                           <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                         )}
-                        <DetailsList details={entry.details} campaign={entry.campaign} />
+                        <DetailsList details={entry.details} campaign={entry.campaign} channel={entry.channel} />
                       </div>
                     ))}
                   </div>
@@ -444,9 +449,14 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                     const channelGroups: { channel: string; entries: TimelineEntry[] }[] = [];
                     for (const entry of group.entries) {
                       const key = entry.channel ?? "";
-                      const last = channelGroups[channelGroups.length - 1];
-                      if (last && last.channel === key) last.entries.push(entry);
+                      const existing = channelGroups.find(g => g.channel === key);
+                      if (existing) existing.entries.push(entry);
                       else channelGroups.push({ channel: key, entries: [entry] });
+                    }
+                    // keep entries of the same campaign next to each other inside a channel card
+                    for (const g of channelGroups) {
+                      const order = [...new Set(g.entries.map(e => e.campaign ?? ""))];
+                      g.entries.sort((a, b) => order.indexOf(a.campaign ?? "") - order.indexOf(b.campaign ?? ""));
                     }
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
@@ -467,14 +477,16 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                               </span>
                             )}
                             {/* If multiple entries share this channel, stack their content */}
-                            {cg.entries.map((entry, ei) => (
+                            {cg.entries.map((entry, ei) => {
+                              const sameCampaignAsPrev = ei > 0 && !!entry.campaign && cg.entries[ei - 1].campaign === entry.campaign;
+                              return (
                               <div key={entry.id} className="group">
-                                {ei > 0 && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
+                                {ei > 0 && !sameCampaignAsPrev && <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />}
                                 {entry.title && <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{entry.title}</div>}
                                 {entry.description && (
                                   <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
                                 )}
-                                <DetailsList details={entry.details} campaign={entry.campaign} align="center" />
+                                <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align="center" />
                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 6 }}>
                                   <button onClick={() => startEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
                                     onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
@@ -486,7 +498,8 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                                   </button>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ))}
                       </div>

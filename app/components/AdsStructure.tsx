@@ -58,12 +58,50 @@ interface DragCtxType {
   overId: string | null;
   setDragId: (id: string | null) => void;
   setOverId: (id: string | null) => void;
+  move: (fromId: string, toId: string) => void;
 }
-const DragCtx = createContext<DragCtxType>({ dragId: null, overId: null, setDragId: () => {}, setOverId: () => {} });
+const DragCtx = createContext<DragCtxType>({ dragId: null, overId: null, setDragId: () => {}, setOverId: () => {}, move: () => {} });
+
+// Moves a node across parents: onto a same-type node (insert before it), an Ad Set onto a Campaign,
+// or an Ad onto an Ad Set / Campaign (shared ad). Returns null when the move isn't allowed.
+function moveNode(nodes: StructureNode[], fromId: string, toId: string): StructureNode[] | null {
+  type Loc = { node: StructureNode; parent: StructureNode | null; list: StructureNode[] };
+  const find = (list: StructureNode[], id: string, parent: StructureNode | null): Loc | null => {
+    for (const n of list) {
+      if (n.id === id) return { node: n, parent, list };
+      const r = find(n.children ?? [], id, n);
+      if (r) return r;
+    }
+    return null;
+  };
+  const from = find(nodes, fromId, null);
+  const to = find(nodes, toId, null);
+  if (!from || !to || fromId === toId) return null;
+  if (find(from.node.children ?? [], toId, from.node)) return null; // can't drop into own subtree
+
+  const clone = (list: StructureNode[]): StructureNode[] => list.map(n => ({ ...n, children: clone(n.children ?? []) }));
+  const copy = clone(nodes);
+  const f = find(copy, fromId, null)!;
+  const t = find(copy, toId, null)!;
+  f.list.splice(f.list.indexOf(f.node), 1);
+
+  if (t.node.type === f.node.type) {
+    const idx = t.list.indexOf(t.node);
+    t.list.splice(idx, 0, f.node);
+  } else if (
+    (f.node.type === "adset" && t.node.type === "campaign") ||
+    (f.node.type === "ad" && (t.node.type === "adset" || t.node.type === "campaign"))
+  ) {
+    t.node.children = [...(t.node.children ?? []), f.node];
+  } else {
+    return null;
+  }
+  return copy;
+}
 
 // ── useDragSort — returns containerProps (drag source) + dropProps (drop target) ─
 function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) => void) {
-  const { dragId, overId, setDragId, setOverId } = useContext(DragCtx);
+  const { dragId, overId, setDragId, setOverId, move } = useContext(DragCtx);
   const exporting = useContext(ExportCtx);
 
   function dragProps(item: StructureNode) {
@@ -100,7 +138,7 @@ function useDragSort(items: StructureNode[], onReorder: (next: StructureNode[]) 
         if (!fromId || fromId === item.id) { setDragId(null); setOverId(null); return; }
         const fromIdx = items.findIndex(x => x.id === fromId);
         const toIdx = items.findIndex(x => x.id === item.id);
-        if (fromIdx === -1 || toIdx === -1) { setDragId(null); setOverId(null); return; }
+        if (fromIdx === -1 || toIdx === -1) { move(fromId, item.id); setDragId(null); setOverId(null); return; }
         const next = [...items];
         const [moved] = next.splice(fromIdx, 1);
         next.splice(toIdx, 0, moved);
@@ -352,7 +390,7 @@ function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isO
         }}>
           <div style={{ width: "100%", aspectRatio: "1 / 1", overflow: "hidden", background: "#f3f4f6" }}>
             {thumb
-              ? <img src={thumb} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              ? <img src={thumb} alt="" draggable={false} crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                 </div>}
@@ -451,6 +489,21 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
   const { dragProps: adsetDragProps, isDragging: adsetIsDragging, isOver: adsetIsOver } = useDragSort(adsets,
     next => onUpdate({ children: [...next, ...sharedAds] })
   );
+  const { dragProps: sharedDragProps, isDragging: sharedIsDragging, isOver: sharedIsOver } = useDragSort(sharedAds,
+    next => onUpdate({ children: [...adsets, ...next] })
+  );
+  const dragCtx = useContext(DragCtx);
+  const exportingNow = useContext(ExportCtx);
+  // Dropping an Ad onto the shared-ads panel (not onto a specific card) appends it to this campaign.
+  const panelDrop = exportingNow ? {} : {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      const fromId = e.dataTransfer.getData("text/plain");
+      if (fromId) dragCtx.move(fromId, node.id);
+      dragCtx.setDragId(null); dragCtx.setOverId(null);
+    },
+  };
 
   function updateChild(id: string, patch: Partial<StructureNode>) {
     onUpdate({ children: node.children.map(c => c.id === id ? { ...c, ...patch } : c) });
@@ -511,10 +564,13 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
       {sharedAds.length > 0 && (
         <>
           <VertBar />
-          <div style={{ padding: "8px 16px", background: "#fefce8", border: "1px dashed #fbbf24", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <div {...panelDrop} style={{ padding: "8px 16px", background: "#fefce8", border: "1px dashed #fbbf24", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
             <div style={{ fontSize: 10, color: "#92400e", fontWeight: 600 }}>Shared Ads (ทุก Ad Set)</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, sharedAds.length)}, 90px)`, gap: 8, justifyContent: "center" }}>
-              {sharedAds.map(ad => <AdCard key={ad.id} node={ad} onRemove={() => removeChild(ad.id)} containerProps={{}} dropProps={{}} isDraggingThis={false} isOver={false} />)}
+              {sharedAds.map(ad => {
+                const { containerProps: shCP, dropProps: shDP } = sharedDragProps(ad);
+                return <AdCard key={ad.id} node={ad} onRemove={() => removeChild(ad.id)} containerProps={shCP} dropProps={shDP} isDraggingThis={sharedIsDragging(ad.id)} isOver={sharedIsOver(ad.id)} />;
+              })}
             </div>
           </div>
         </>
@@ -699,7 +755,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   const activePlatform = nodes.find(n => n.id === activePlatformId) ?? nodes[0] ?? null;
 
   return (
-    <DragCtx.Provider value={{ dragId, overId, setDragId, setOverId }}>
+    <DragCtx.Provider value={{ dragId, overId, setDragId, setOverId, move: (fromId, toId) => { const next = moveNode(nodes, fromId, toId); if (next) onChange(next); } }}>
       <ExportCtx.Provider value={exporting}>
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0, flexWrap: "wrap" }}>

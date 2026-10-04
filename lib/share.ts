@@ -113,6 +113,15 @@ export function diffStructure(base: StructureNode[], draft: StructureNode[]): Sh
       const to = now.node.meta?.[key] ?? "";
       if (from !== to) out.push({ area: "structure", action: "updated", path: now.path, field: META_LABELS[key], from, to });
     }
+    const kwText = (m?: Record<string, string>) => {
+      try {
+        const v = JSON.parse(m?.keywords ?? "[]") as { t: string; m: string }[];
+        return Array.isArray(v) ? v.map(k => `${k.m === "Exact" ? `[${k.t}]` : k.m === "Phrase" ? `"${k.t}"` : k.t} (${k.m})`).join(", ") : "";
+      } catch { return ""; }
+    };
+    const kwFrom = kwText(was.node.meta);
+    const kwTo = kwText(now.node.meta);
+    if (kwFrom !== kwTo) out.push({ area: "structure", action: "updated", path: now.path, field: "Keywords", from: kwFrom, to: kwTo });
   }
   return out;
 }

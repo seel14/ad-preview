@@ -271,6 +271,104 @@ function BudgetRow({ meta, onUpdate, textColor }: {
   );
 }
 
+// ── Google Ads search keywords (stored as JSON in node.meta.keywords) ─────────
+type MatchType = "Broad" | "Phrase" | "Exact";
+interface Keyword { t: string; m: MatchType }
+const MATCH_ORDER: MatchType[] = ["Broad", "Phrase", "Exact"];
+const MATCH_STYLE: Record<MatchType, { bg: string; fg: string }> = {
+  Broad: { bg: "#dbeafe", fg: "#1e40af" },
+  Phrase: { bg: "#fef3c7", fg: "#92400e" },
+  Exact: { bg: "#dcfce7", fg: "#166534" },
+};
+
+function parseKeywords(meta?: Record<string, string>): Keyword[] {
+  try {
+    const v = JSON.parse(meta?.keywords ?? "[]");
+    return Array.isArray(v) ? v.filter((k): k is Keyword => !!k && typeof k.t === "string" && MATCH_ORDER.includes(k.m)) : [];
+  } catch { return []; }
+}
+function formatKeyword(k: Keyword) {
+  return k.m === "Exact" ? `[${k.t}]` : k.m === "Phrase" ? `"${k.t}"` : k.t;
+}
+// "[kw]" → Exact, "\"kw\"" → Phrase, plain → the selected default
+function parseKeywordLine(line: string, fallback: MatchType): Keyword | null {
+  const raw = line.trim();
+  if (!raw) return null;
+  const exact = raw.match(/^\[(.+)\]$/);
+  if (exact) return { t: exact[1].trim(), m: "Exact" };
+  const phrase = raw.match(/^["“](.+)["”]$/);
+  if (phrase) return { t: phrase[1].trim(), m: "Phrase" };
+  return { t: raw, m: fallback };
+}
+
+function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpdate: (m: Record<string, string>) => void }) {
+  const exporting = useContext(ExportCtx);
+  const keywords = parseKeywords(meta);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [match, setMatch] = useState<MatchType>("Broad");
+  if (exporting && keywords.length === 0) return null;
+
+  const save = (next: Keyword[]) => onUpdate({ ...(meta ?? {}), keywords: JSON.stringify(next) });
+  const add = () => {
+    const added = text.split("\n").map(l => parseKeywordLine(l, match)).filter((k): k is Keyword => !!k);
+    if (added.length) save([...keywords, ...added]);
+    setText("");
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, maxWidth: 280 }} onClick={e => e.stopPropagation()}>
+      {keywords.length > 0 && (
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.8 }}>Search Keywords</div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center" }}>
+        {keywords.map((k, i) => (
+          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", color: "#0f172a", borderRadius: 9999, padding: "2px 4px 2px 8px", fontSize: 10, fontWeight: 600 }}>
+            {formatKeyword(k)}
+            <span
+              onClick={exporting ? undefined : () => save(keywords.map((x, j) => j === i ? { ...x, m: MATCH_ORDER[(MATCH_ORDER.indexOf(x.m) + 1) % 3] } : x))}
+              title={exporting ? undefined : "คลิกเพื่อเปลี่ยน Match Type"}
+              style={{ background: MATCH_STYLE[k.m].bg, color: MATCH_STYLE[k.m].fg, borderRadius: 9999, padding: "0 6px", fontSize: 9, fontWeight: 800, cursor: exporting ? "default" : "pointer" }}>
+              {k.m}
+            </span>
+            {!exporting && (
+              <span onClick={() => save(keywords.filter((_, j) => j !== i))} title="ลบ"
+                style={{ cursor: "pointer", color: "#94a3b8", fontSize: 12, lineHeight: 1, padding: "0 2px" }}>×</span>
+            )}
+          </span>
+        ))}
+      </div>
+      {!exporting && !open && (
+        <button onClick={() => setOpen(true)}
+          style={{ fontSize: 10, color: "#fff", background: "rgba(255,255,255,0.15)", border: "1px dashed rgba(255,255,255,0.6)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+          + Keyword
+        </button>
+      )}
+      {!exporting && open && (
+        <div style={{ background: "#fff", color: "#0f172a", borderRadius: 8, padding: 8, display: "flex", flexDirection: "column", gap: 6, width: 240, textAlign: "left" }}>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={4} autoFocus
+            placeholder={'1 บรรทัดต่อ 1 Keyword\n[exact match]\n"phrase match"\nbroad match'}
+            style={{ fontSize: 11, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 7px", resize: "vertical", color: "#0f172a" }} />
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, color: "#64748b" }}>Match Type:</span>
+            {MATCH_ORDER.map(m => (
+              <button key={m} onClick={() => setMatch(m)}
+                style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 9999, cursor: "pointer", border: match === m ? `1.5px solid ${MATCH_STYLE[m].fg}` : "1.5px solid #e2e8f0", background: match === m ? MATCH_STYLE[m].bg : "#fff", color: match === m ? MATCH_STYLE[m].fg : "#64748b" }}>
+                {m}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+            <button onClick={() => { setOpen(false); setText(""); }} style={{ fontSize: 10, color: "#64748b", background: "none", border: "none", cursor: "pointer" }}>ยกเลิก</button>
+            <button onClick={add} disabled={!text.trim()} style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: text.trim() ? "#2563eb" : "#94a3b8", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>เพิ่ม</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Thumbnail strip (shows inside Campaign/AdSet nodes) ────────────────────────
 function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
   if (total === 0) return null;
@@ -432,7 +530,8 @@ function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isO
 }
 
 // ── Adset node ─────────────────────────────────────────────────────────────────
-function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver }: {
+function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords }: {
+  showKeywords?: boolean;
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
   containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -461,6 +560,7 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps,
           <>
             <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />
             <ThumbStrip thumbs={adThumbs} total={ads.length} />
+            {showKeywords && <KeywordList meta={node.meta} onUpdate={m => onUpdate({ meta: m })} />}
           </>
         }>
         <AddAdButton existingAdIds={existingAdIds} loadedAds={loadedAds} onAdd={addAd} />
@@ -497,7 +597,8 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps,
 }
 
 // ── Campaign node ──────────────────────────────────────────────────────────────
-function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver }: {
+function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords }: {
+  showKeywords?: boolean;
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
   containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -551,6 +652,7 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
           <>
             <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor="#fff" />
             <ThumbStrip thumbs={campThumbs} total={campTotal} />
+            {showKeywords && <KeywordList meta={node.meta} onUpdate={m => onUpdate({ meta: m })} />}
           </>
         }>
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
@@ -569,7 +671,7 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
                 <div key={adset.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                   <ChildConnector isFirst={i === 0} isLast={i === adsets.length - 1} single={adsets.length === 1} />
                   <div style={{ paddingLeft: 8, paddingRight: 8 }}>
-                    <AdsetNode node={adset} theme={theme} loadedAds={loadedAds}
+                    <AdsetNode node={adset} theme={theme} loadedAds={loadedAds} showKeywords={showKeywords}
                       onUpdate={p => updateChild(adset.id, p)} onRemove={() => removeChild(adset.id)}
                       containerProps={asCP} dropProps={asDP}
                       isDraggingThis={adsetIsDragging(adset.id)} isOver={adsetIsOver(adset.id)} />
@@ -649,7 +751,7 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
                 <div key={campaign.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                   <ChildConnector isFirst={i === 0} isLast={i === campaigns.length - 1} single={campaigns.length === 1} />
                   <div style={{ paddingLeft: 12, paddingRight: 12 }}>
-                    <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds}
+                    <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds} showKeywords={/google/i.test(node.name)}
                       onUpdate={p => updateChild(campaign.id, p)} onRemove={() => removeChild(campaign.id)}
                       containerProps={cpCP} dropProps={cpDP}
                       isDraggingThis={campaignIsDragging(campaign.id)} isOver={campaignIsOver(campaign.id)} />

@@ -284,8 +284,18 @@ const MATCH_STYLE: Record<MatchType, { bg: string; fg: string }> = {
 function parseKeywords(meta?: Record<string, string>): Keyword[] {
   try {
     const v = JSON.parse(meta?.keywords ?? "[]");
-    return Array.isArray(v) ? v.filter((k): k is Keyword => !!k && typeof k.t === "string" && MATCH_ORDER.includes(k.m)) : [];
+    return Array.isArray(v) ? uniqueKeywords(v.filter((k): k is Keyword => !!k && typeof k.t === "string" && MATCH_ORDER.includes(k.m))) : [];
   } catch { return []; }
+}
+// Same keyword text (case/space-insensitive) + same match type counts as a duplicate.
+function uniqueKeywords(list: Keyword[]): Keyword[] {
+  const seen = new Set<string>();
+  return list.filter(k => {
+    const key = `${k.m}:${k.t.trim().toLowerCase().replace(/\s+/g, " ")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 function formatKeyword(k: Keyword) {
   return k.m === "Exact" ? `[${k.t}]` : k.m === "Phrase" ? `"${k.t}"` : k.t;
@@ -309,7 +319,7 @@ function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpda
   const [match, setMatch] = useState<MatchType>("Broad");
   if (exporting && keywords.length === 0) return null;
 
-  const save = (next: Keyword[]) => onUpdate({ ...(meta ?? {}), keywords: JSON.stringify(next) });
+  const save = (next: Keyword[]) => onUpdate({ ...(meta ?? {}), keywords: JSON.stringify(uniqueKeywords(next)) });
   const add = () => {
     const added = text.split("\n").map(l => parseKeywordLine(l, match)).filter((k): k is Keyword => !!k);
     if (added.length) save([...keywords, ...added]);

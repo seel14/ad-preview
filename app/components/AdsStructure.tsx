@@ -300,15 +300,27 @@ function uniqueKeywords(list: Keyword[]): Keyword[] {
 function formatKeyword(k: Keyword) {
   return k.m === "Exact" ? `[${k.t}]` : k.m === "Phrase" ? `"${k.t}"` : k.t;
 }
-// "[kw]" → Exact, "\"kw\"" → Phrase, plain → the selected default
-function parseKeywordLine(line: string, fallback: MatchType): Keyword | null {
+// "[kw]" → Exact only, "\"kw\"" → Phrase only, plain → every selected match type
+function parseKeywordLine(line: string, types: MatchType[]): Keyword[] {
   const raw = line.trim();
-  if (!raw) return null;
+  if (!raw) return [];
   const exact = raw.match(/^\[(.+)\]$/);
-  if (exact) return { t: exact[1].trim(), m: "Exact" };
+  if (exact) return [{ t: exact[1].trim(), m: "Exact" }];
   const phrase = raw.match(/^["“](.+)["”]$/);
-  if (phrase) return { t: phrase[1].trim(), m: "Phrase" };
-  return { t: raw, m: fallback };
+  if (phrase) return [{ t: phrase[1].trim(), m: "Phrase" }];
+  return types.map(m => ({ t: raw, m }));
+}
+
+function groupedKeywords(list: Keyword[]): { t: string; types: MatchType[] }[] {
+  const groups: { t: string; types: MatchType[] }[] = [];
+  for (const k of list) {
+    const key = k.t.trim().toLowerCase();
+    const g = groups.find(x => x.t.trim().toLowerCase() === key);
+    if (g) { if (!g.types.includes(k.m)) g.types.push(k.m); }
+    else groups.push({ t: k.t, types: [k.m] });
+  }
+  for (const g of groups) g.types.sort((a, b) => MATCH_ORDER.indexOf(a) - MATCH_ORDER.indexOf(b));
+  return groups;
 }
 
 function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpdate: (m: Record<string, string>) => void }) {
@@ -316,12 +328,12 @@ function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpda
   const keywords = parseKeywords(meta);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [match, setMatch] = useState<MatchType>("Broad");
+  const [matches, setMatches] = useState<MatchType[]>(["Broad"]);
   if (exporting && keywords.length === 0) return null;
 
   const save = (next: Keyword[]) => onUpdate({ ...(meta ?? {}), keywords: JSON.stringify(uniqueKeywords(next)) });
   const add = () => {
-    const added = text.split("\n").map(l => parseKeywordLine(l, match)).filter((k): k is Keyword => !!k);
+    const added = text.split("\n").flatMap(l => parseKeywordLine(l, matches));
     if (added.length) save([...keywords, ...added]);
     setText("");
     setOpen(false);
@@ -333,17 +345,14 @@ function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpda
         <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.8 }}>Search Keywords</div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center" }}>
-        {keywords.map((k, i) => (
-          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", color: "#0f172a", borderRadius: 9999, padding: "2px 4px 2px 8px", fontSize: 10, fontWeight: 600 }}>
-            {formatKeyword(k)}
-            <span
-              onClick={exporting ? undefined : () => save(keywords.map((x, j) => j === i ? { ...x, m: MATCH_ORDER[(MATCH_ORDER.indexOf(x.m) + 1) % 3] } : x))}
-              title={exporting ? undefined : "คลิกเพื่อเปลี่ยน Match Type"}
-              style={{ background: MATCH_STYLE[k.m].bg, color: MATCH_STYLE[k.m].fg, borderRadius: 9999, padding: "0 6px", fontSize: 9, fontWeight: 800, cursor: exporting ? "default" : "pointer" }}>
-              {k.m}
-            </span>
+        {groupedKeywords(keywords).map(g => (
+          <span key={g.t.toLowerCase()} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", color: "#0f172a", borderRadius: 9999, padding: "2px 4px 2px 8px", fontSize: 10, fontWeight: 600 }}>
+            {g.types.length === 1 ? formatKeyword({ t: g.t, m: g.types[0] }) : g.t}
+            {g.types.map(m => (
+              <span key={m} style={{ background: MATCH_STYLE[m].bg, color: MATCH_STYLE[m].fg, borderRadius: 9999, padding: "0 6px", fontSize: 9, fontWeight: 800 }}>{m}</span>
+            ))}
             {!exporting && (
-              <span onClick={() => save(keywords.filter((_, j) => j !== i))} title="ลบ"
+              <span onClick={() => save(keywords.filter(x => x.t.trim().toLowerCase() !== g.t.trim().toLowerCase()))} title="ลบ Keyword นี้ (ทุก Match Type)"
                 style={{ cursor: "pointer", color: "#94a3b8", fontSize: 12, lineHeight: 1, padding: "0 2px" }}>×</span>
             )}
           </span>
@@ -361,13 +370,17 @@ function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpda
             placeholder={'1 บรรทัดต่อ 1 Keyword\n[exact match]\n"phrase match"\nbroad match'}
             style={{ fontSize: 11, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 7px", resize: "vertical", color: "#0f172a" }} />
           <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 10, color: "#64748b" }}>Match Type:</span>
-            {MATCH_ORDER.map(m => (
-              <button key={m} onClick={() => setMatch(m)}
-                style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 9999, cursor: "pointer", border: match === m ? `1.5px solid ${MATCH_STYLE[m].fg}` : "1.5px solid #e2e8f0", background: match === m ? MATCH_STYLE[m].bg : "#fff", color: match === m ? MATCH_STYLE[m].fg : "#64748b" }}>
-                {m}
-              </button>
-            ))}
+            <span style={{ fontSize: 10, color: "#64748b" }}>Match Type (เลือกได้หลายอัน):</span>
+            {MATCH_ORDER.map(m => {
+              const on = matches.includes(m);
+              return (
+                <button key={m} onClick={() => setMatches(prev => on ? (prev.length > 1 ? prev.filter(x => x !== m) : prev) : [...prev, m])}
+                  style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 9999, cursor: "pointer", border: on ? `1.5px solid ${MATCH_STYLE[m].fg}` : "1.5px solid #e2e8f0", background: on ? MATCH_STYLE[m].bg : "#fff", color: on ? MATCH_STYLE[m].fg : "#64748b" }}>
+                  {on ? "✓ " : ""}{m}
+                </button>
+              );
+            })}
+            <button onClick={() => setMatches([...MATCH_ORDER])} style={{ fontSize: 10, color: "#2563eb", background: "none", border: "none", cursor: "pointer" }}>ทั้ง 3</button>
           </div>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
             <button onClick={() => { setOpen(false); setText(""); }} style={{ fontSize: 10, color: "#64748b", background: "none", border: "none", cursor: "pointer" }}>ยกเลิก</button>

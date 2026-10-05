@@ -122,6 +122,8 @@ code,.mono{font-family:var(--font-mono);font-size:.82em;background:rgba(244,239,
 
 
 
+
+
 /* ===== EXTRA COMPONENTS (v2) ===== */
 .toc{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:20px}
 .toc .it{display:flex;gap:28px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:26px;padding:34px 40px}
@@ -214,6 +216,29 @@ body.editing .steps li,body.editing .cl li{cursor:text}
 /* ===== SOUND CONTROLS ===== */
 .deck-controls button.snd{font-size:17px;padding:6px 10px;opacity:.55}
 .deck-controls button.snd.on{opacity:1;background:rgba(200,255,61,.18)}
+
+/* ===== AMBIENT MOTION (subtle, per slide) ===== */
+.slide::before{background-size:140% 140%,140% 140%,auto;animation:glowDrift 20s ease-in-out infinite alternate}
+@keyframes glowDrift{from{background-position:0% 0%,100% 100%}to{background-position:100% 30%,0% 70%}}
+.slide::after{animation:gridMove 24s linear infinite}
+@keyframes gridMove{from{background-position:0 0,0 0}to{background-position:120px 120px,120px 120px}}
+.slide>.fx{position:absolute!important;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.fx i{position:absolute;bottom:-30px;border-radius:50%;background:var(--accent);opacity:0;animation:floatUp linear infinite}
+.fx i:nth-child(3n){background:var(--blue)}
+.fx i:nth-child(5n){background:var(--accent2)}
+@keyframes floatUp{0%{transform:translate(0,0);opacity:0}12%{opacity:.28}85%{opacity:.18}100%{transform:translate(var(--dx,30px),-1150px);opacity:0}}
+.fx b{position:absolute;top:0;left:-30%;width:30%;height:3px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.5;animation:sweep 9s ease-in-out infinite}
+@keyframes sweep{0%{left:-30%}60%,100%{left:110%}}
+.slide .kicker::after{content:"";display:inline-block;width:56px;height:2px;margin-left:16px;vertical-align:middle;background:var(--accent);transform-origin:left;animation:kick 3.2s ease-in-out infinite}
+@keyframes kick{0%,100%{transform:scaleX(.3);opacity:.5}50%{transform:scaleX(1);opacity:1}}
+.slide.visible .mock{animation:bob 7s ease-in-out infinite}
+@keyframes bob{0%,100%{translate:0 0}50%{translate:0 -8px}}
+.flow .ar{animation:nudge 1.8s ease-in-out infinite}
+@keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(8px)}}
+.slide .pn{animation:none}
+/* only the visible slide animates */
+.slide:not(.active) *,.slide:not(.active)::before,.slide:not(.active)::after{animation-play-state:paused!important}
+@media (prefers-reduced-motion:reduce){.fx{display:none}.slide::before,.slide::after,.slide .kicker::after,.slide.visible .mock,.flow .ar{animation:none}}
 
 /* ===== DECK CHROME (outside stage) ===== */
 .deck-controls{display:flex;gap:14px;align-items:center;background:rgba(5,8,15,.72);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:99px;padding:8px 14px;color:#f4efe3;font:500 15px var(--font-mono)}
@@ -503,6 +528,8 @@ addEventListener('keydown',e=>{if((e.key==='e'||e.key==='E')&&!e.target.isConten
 
 
 
+
+
 /* ===== HOVER INTERACTIONS: tooltips, tilt, linked highlight ===== */
 (function(){
   const tip=document.getElementById('tip');
@@ -740,6 +767,20 @@ addEventListener('keydown',e=>{if((e.key==='e'||e.key==='E')&&!e.target.isConten
   });
   if('speechSynthesis' in window)speechSynthesis.getVoices();
   paint();
+})();
+
+/* ===== AMBIENT MOTION: floating dots + light sweep injected into every slide ===== */
+(function(){
+  document.querySelectorAll('.slide').forEach((sl,si)=>{
+    const fx=document.createElement('div');fx.className='fx';
+    let h='<b></b>';
+    for(let k=0;k<12;k++){
+      const r=(a,b)=>a+((Math.sin((si+1)*(k+3)*12.9898)*43758.5453)%1+1)%1*(b-a); // deterministic per slide
+      const size=r(4,10),left=r(3,97),dur=r(18,34),delay=-r(0,dur),dx=r(-60,60);
+      h+=`<i style="left:${left}%;width:${size}px;height:${size}px;animation-duration:${dur}s;animation-delay:${delay}s;--dx:${dx}px"></i>`;
+    }
+    fx.innerHTML=h;sl.insertBefore(fx,sl.firstChild);
+  });
 })();
 </script>
 </body>

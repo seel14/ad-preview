@@ -146,7 +146,7 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
       <div style={{ flex: 1, minHeight: 0, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
           <Section title="Locations" grow>
-            {item.locations.length ? <Chips items={item.locations} /> : <Empty />}
+            {item.locations.length ? <Chips items={item.locations} /> : item.locationTypes.length ? <span style={{ fontSize: 12, color: "#94a3b8" }}>Facebook ไม่ได้ส่งรายชื่อพื้นที่มา (ตรวจใน Ads Manager)</span> : <Empty />}
             {item.locationTypes.length > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{item.locationTypes.join(" · ")}</div>}
             <LocationMap points={item.geoPoints ?? []} width={264} height={150} />
             {(item.geoPoints ?? []).length > 0 && (

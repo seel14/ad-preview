@@ -84,20 +84,33 @@ function groupsFrom(specs: Json): TargetGroup[] {
   return [...byLabel].map(([label, set]) => ({ label, items: [...set].filter(Boolean) })).filter(g => g.items.length);
 }
 
+const GEO_GROUP_LABEL: Record<string, string> = { worldwide: "ทั่วโลก", europe: "Europe", asia: "Asia", nafta: "NAFTA", eea: "EEA" };
+const GEO_KNOWN_KEYS = new Set(["location_types", "countries", "regions", "cities", "custom_locations", "zips", "geo_markets", "neighborhoods", "country_groups"]);
+
 function geoList(geo: Json, regionNames: Intl.DisplayNames | null): string[] {
   if (!geo) return [];
   const out: string[] = [];
   for (const c of geo.countries ?? []) out.push(regionNames?.of(c) ?? c);
-  for (const r of geo.regions ?? []) out.push(r.name);
+  for (const g of geo.country_groups ?? []) out.push(GEO_GROUP_LABEL[g] ?? titleCase(String(g)));
+  for (const r of geo.regions ?? []) out.push(r.name ?? r.key);
   for (const c of geo.cities ?? []) out.push(c.radius ? `${c.name} (+${c.radius} ${c.distance_unit === "mile" ? "mi" : "km"})` : c.name);
   for (const c of geo.custom_locations ?? []) {
     const where = c.name ?? (c.latitude != null ? `${Number(c.latitude).toFixed(3)}, ${Number(c.longitude).toFixed(3)}` : "Pin");
     out.push(c.radius ? `${where} (r ${c.radius} ${c.distance_unit === "mile" ? "mi" : "km"})` : where);
   }
   for (const z of geo.zips ?? []) out.push(z.name ?? z.key);
-  for (const g of geo.geo_markets ?? []) out.push(g.name);
-  for (const g of geo.neighborhoods ?? []) out.push(g.name);
-  return out;
+  for (const g of geo.geo_markets ?? []) out.push(g.name ?? g.key);
+  for (const g of geo.neighborhoods ?? []) out.push(g.name ?? g.key);
+  // Any other geo shape Meta returns (places, electoral districts, metro areas, ...): show it instead of dropping it.
+  for (const [key, value] of Object.entries<Json>(geo)) {
+    if (GEO_KNOWN_KEYS.has(key) || value == null) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) out.push(typeof v === "object" ? `${titleCase(key)}: ${v?.name ?? v?.key ?? JSON.stringify(v).slice(0, 60)}` : `${titleCase(key)}: ${v}`);
+    } else if (typeof value !== "object") {
+      out.push(`${titleCase(key)}: ${value}`);
+    }
+  }
+  return out.filter(Boolean);
 }
 
 const LOCATION_TYPE_LABEL: Record<string, string> = {

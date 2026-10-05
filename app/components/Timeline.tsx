@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MATCH_ORDER, MATCH_STYLE, formatKeyword, groupedKeywords, parseKeywordLine, uniqueKeywords, type Keyword, type MatchType } from "@/lib/keywords";
 
 export interface TimelineImage { src: string; name?: string; adId?: string }
 
@@ -12,6 +13,7 @@ export interface TimelineEntry {
   description?: string;
   campaign?: string; // campaign name picked from Ads Structure
   images?: TimelineImage[]; // ad creatives shown on the card (Facebook / TikTok)
+  keywords?: Keyword[]; // Google Ads search keywords with match types
   details?: Record<string, string>; // channel-specific fields, e.g. { Objective: "...", Target: "..." }
   createdAt: number;
 }
@@ -131,6 +133,25 @@ function ImageStrip({ images, align }: { images?: TimelineImage[]; align: "left"
   );
 }
 
+function KeywordChips({ keywords, align }: { keywords?: Keyword[]; align: "left" | "center" }) {
+  if (!keywords?.length) return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#94a3b8", marginBottom: 3, textAlign: align }}>Search Keywords</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: align === "center" ? "center" : "flex-start" }}>
+        {groupedKeywords(keywords).map(g => (
+          <span key={g.t.toLowerCase()} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 9999, padding: "2px 4px 2px 8px", fontSize: 10, fontWeight: 600 }}>
+            {g.types.length === 1 ? formatKeyword({ t: g.t, m: g.types[0] }) : g.t}
+            {g.types.map(m => (
+              <span key={m} style={{ background: MATCH_STYLE[m].bg, color: MATCH_STYLE[m].fg, borderRadius: 9999, padding: "0 6px", fontSize: 9, fontWeight: 800 }}>{m}</span>
+            ))}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function groupByChannel(entries: TimelineEntry[]): { channel: string; entries: TimelineEntry[] }[] {
   const groups: { channel: string; entries: TimelineEntry[] }[] = [];
   for (const entry of entries) {
@@ -170,6 +191,7 @@ function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: 
               <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
             )}
             <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align={align} />
+            <KeywordChips keywords={entry.keywords} align={align} />
             <ImageStrip images={entry.images} align={align} />
             <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
               <button onClick={() => onEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
@@ -204,16 +226,17 @@ function csvCell(value: string): string {
 }
 
 // Flattens the per-channel detail fields into one readable cell, e.g. "Objective: Leads; Target: 25-34"
-function formatDetails(details?: Record<string, string>): string {
-  if (!details) return "";
-  return Object.entries(details).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("; ");
+function formatDetails(details?: Record<string, string>, keywords?: Keyword[]): string {
+  const parts = Object.entries(details ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  if (keywords?.length) parts.push(`Keywords: ${keywords.map(k => `${formatKeyword(k)} (${k.m})`).join(", ")}`);
+  return parts.join("; ");
 }
 
 function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
   const rows = [...entries]
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map(e => [e.date, e.channel ?? "", e.campaign ?? "", e.title, e.description ?? "", formatDetails(e.details)].map(csvCell).join(","));
+    .map(e => [e.date, e.channel ?? "", e.campaign ?? "", e.title, e.description ?? "", formatDetails(e.details, e.keywords)].map(csvCell).join(","));
   // Prefix with a UTF-8 BOM so Thai text opens correctly in Excel
   const csv = "﻿" + [header, ...rows].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -233,9 +256,11 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   const [adding, setAdding] = useState(false);
   const [otherOpen, setOtherOpen] = useState(false);
   const [imgBusy, setImgBusy] = useState(false);
+  const [kwText, setKwText] = useState("");
+  const [kwTypes, setKwTypes] = useState<MatchType[]>(["Broad"]);
   const [campaignOther, setCampaignOther] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string>, images: [] as TimelineImage[] });
+  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string>, images: [] as TimelineImage[], keywords: [] as Keyword[] });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
   const [filterFrom, setFilterFrom] = useState(() => {
     const now = new Date();
@@ -264,18 +289,20 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   }
 
   function startAdd() {
-    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {}, images: [] });
+    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {}, images: [], keywords: [] });
     setEditingId(null);
     setOtherOpen(false);
     setCampaignOther(false);
+    setKwText("");
     setAdding(true);
   }
 
   function startEdit(entry: TimelineEntry) {
-    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {}, images: entry.images ?? [] });
+    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: { ...(entry.details ?? {}), ...(entry.keywords?.length ? { Keyword: entry.details?.Keyword ?? "" } : {}) }, images: entry.images ?? [], keywords: entry.keywords ?? [] });
     setEditingId(entry.id);
     setOtherOpen(false);
     setCampaignOther(false);
+    setKwText("");
     setAdding(true);
   }
 
@@ -284,7 +311,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setEditingId(null);
   }
 
-  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()) || form.images.length > 0);
+  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()) || form.images.length > 0 || form.keywords.length > 0);
 
   function saveForm() {
     if (!canSave) return;
@@ -296,16 +323,17 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
       if (v) details[field] = v;
     }
     const detailsOrUndefined = Object.keys(details).length ? details : undefined;
+    const keywordsOrUndefined = form.channel.trim() === "Google" && form.keywords.length ? uniqueKeywords(form.keywords) : undefined;
     const imagesOrUndefined = IMAGE_CHANNELS.includes(form.channel.trim()) && form.images.length ? form.images : undefined;
 
     if (editingId) {
       onChange(entries.map(e => e.id === editingId
-        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined }
+        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined }
         : e));
     } else {
       onChange([...entries, {
         id: uid(), date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(),
-        description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, createdAt: Date.now(),
+        description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined, createdAt: Date.now(),
       }]);
     }
     cancelForm();
@@ -444,9 +472,49 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                       );
                     })}
                   </div>
+                  {form.channel.trim() === "Google" && "Keyword" in form.details && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b" }}>Search Keywords</span>
+                      {form.keywords.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {groupedKeywords(form.keywords).map(g => (
+                            <span key={g.t.toLowerCase()} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f8fafc", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 9999, padding: "2px 4px 2px 8px", fontSize: 11, fontWeight: 600 }}>
+                              {g.types.length === 1 ? formatKeyword({ t: g.t, m: g.types[0] }) : g.t}
+                              {g.types.map(m => <span key={m} style={{ background: MATCH_STYLE[m].bg, color: MATCH_STYLE[m].fg, borderRadius: 9999, padding: "0 6px", fontSize: 9, fontWeight: 800 }}>{m}</span>)}
+                              <span onClick={() => setForm(f => ({ ...f, keywords: f.keywords.filter(k => k.t.trim().toLowerCase() !== g.t.trim().toLowerCase()) }))}
+                                style={{ cursor: "pointer", color: "#94a3b8", fontSize: 13, lineHeight: 1, padding: "0 2px" }} title="ลบ Keyword นี้">×</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <textarea value={kwText} onChange={e => setKwText(e.target.value)} rows={3}
+                        placeholder={'1 บรรทัดต่อ 1 Keyword\n[exact match]\n"phrase match"\nbroad match'}
+                        style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "6px 9px", resize: "vertical" }} />
+                      <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 10, color: "#64748b" }}>Match Type (เลือกได้หลายอัน):</span>
+                        {MATCH_ORDER.map(m => {
+                          const on = kwTypes.includes(m);
+                          return (
+                            <button key={m} type="button" onClick={() => setKwTypes(prev => on ? (prev.length > 1 ? prev.filter(x => x !== m) : prev) : [...prev, m])}
+                              style={{ fontSize: 10, fontWeight: 700, padding: "1px 9px", borderRadius: 9999, cursor: "pointer", border: on ? `1.5px solid ${MATCH_STYLE[m].fg}` : "1.5px solid #e2e8f0", background: on ? MATCH_STYLE[m].bg : "#fff", color: on ? MATCH_STYLE[m].fg : "#64748b" }}>
+                              {on ? "✓ " : ""}{m}
+                            </button>
+                          );
+                        })}
+                        <button type="button" onClick={() => setKwTypes([...MATCH_ORDER])} style={{ fontSize: 10, color: "#2563eb", background: "none", border: "none", cursor: "pointer" }}>ทั้ง 3</button>
+                        <button type="button" disabled={!kwText.trim()}
+                          onClick={() => {
+                            const added = kwText.split("\n").flatMap(l => parseKeywordLine(l, kwTypes));
+                            if (added.length) setForm(f => ({ ...f, keywords: uniqueKeywords([...f.keywords, ...added]) }));
+                            setKwText("");
+                          }}
+                          style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#fff", background: kwText.trim() ? "#2563eb" : "#94a3b8", border: "none", borderRadius: 6, padding: "3px 12px", cursor: "pointer" }}>เพิ่ม Keyword</button>
+                      </div>
+                    </div>
+                  )}
                   {addedFields.map(field => (
                     <div key={field} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{field}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{field === "Keyword" && form.channel.trim() === "Google" ? "Keyword (หมายเหตุเพิ่มเติม)" : field}</span>
                       <input type="text" value={form.details[field] ?? ""}
                         onChange={e => setForm(f => ({ ...f, details: { ...f.details, [field]: e.target.value } }))}
                         placeholder={`${field} เปลี่ยนเป็นอะไร`}

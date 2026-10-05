@@ -28,6 +28,7 @@ export interface TimelineEntry {
   channel?: string; // e.g. "Facebook", "Google", "TikTok"
   campaign?: string;
   images?: { src: string; name?: string; adId?: string }[];
+  keywords?: { t: string; m: "Broad" | "Phrase" | "Exact" }[];
   title: string;
   description?: string;
   details?: Record<string, string>;

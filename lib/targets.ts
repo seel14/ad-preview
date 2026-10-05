@@ -105,7 +105,7 @@ function geoList(geo: Json, regionNames: Intl.DisplayNames | null): string[] {
   for (const [key, value] of Object.entries<Json>(geo)) {
     if (GEO_KNOWN_KEYS.has(key) || value == null) continue;
     if (Array.isArray(value)) {
-      for (const v of value) out.push(typeof v === "object" ? `${titleCase(key)}: ${v?.name ?? v?.key ?? JSON.stringify(v).slice(0, 60)}` : `${titleCase(key)}: ${v}`);
+      for (const v of value) out.push(typeof v === "object" ? `${titleCase(key)}: ${v?.name ?? v?.key ?? JSON.stringify(v).slice(0, 60)}${v?.radius ? ` (+${v.radius} ${v.distance_unit === "mile" ? "mi" : "km"})` : ""}` : `${titleCase(key)}: ${v}`);
     } else if (typeof value !== "object") {
       out.push(`${titleCase(key)}: ${value}`);
     }
@@ -121,7 +121,7 @@ const LOCATION_TYPE_LABEL: Record<string, string> = {
 
 const toKm = (r: number | undefined, unit: string | undefined) => (r ? (unit === "mile" ? r * 1.609344 : r) : null);
 
-let geocodeBudget = 12; // per request: keeps the call within the serverless time limit
+let geocodeBudget = 20; // per request: keeps the call within the serverless time limit
 const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
 // `query` is a free-text search, or a `postalcode=10110&country=th` style structured search.
 async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
@@ -156,6 +156,28 @@ async function geoPointsFrom(geo: Json, excluded: boolean, countryNames: Intl.Di
     const pos = await geocode(q);
     if (pos) out.push({ label: c.name, ...pos, radiusKm: toKm(c.radius, c.distance_unit), excluded });
     if (!cached) await new Promise(r => setTimeout(r, 1100)); // Nominatim usage policy: max 1 request/second
+  }
+  // Places (hospitals, malls, ...) and any other pinned location type: use their coordinates when Meta sends them,
+  // otherwise look the place up by name.
+  for (const [key, value] of Object.entries<Json>(geo)) {
+    if (GEO_KNOWN_KEYS.has(key) || !Array.isArray(value)) continue;
+    for (const v of value.slice(0, 12)) {
+      if (!v || typeof v !== "object") continue;
+      const label = v.name ?? v.key ?? "";
+      const radiusKm = toKm(v.radius, v.distance_unit);
+      if (v.latitude != null && v.longitude != null) {
+        out.push({ label, lat: Number(v.latitude), lng: Number(v.longitude), radiusKm, excluded });
+        continue;
+      }
+      if (!label) continue;
+      const q = [label, v.region, v.country_code ?? v.country].filter(Boolean).join(", ");
+      const cached = geocodeCache.has(q);
+      if (!cached && geocodeBudget <= 0) continue;
+      if (!cached) geocodeBudget--;
+      const pos = await geocode(q);
+      if (pos) out.push({ label, ...pos, radiusKm, excluded });
+      if (!cached) await new Promise(r => setTimeout(r, 1100));
+    }
   }
   // Postcodes come as codes only ("TH:10110") — pin the centre point of each one.
   for (const z of (geo.zips ?? []).slice(0, 12)) {
@@ -233,7 +255,7 @@ export async function listAdsetsForAccount(accountId: string, token: string): Pr
 export async function getAdsetTargets(adsetIds: string[], token: string, adIdsByAdset: Record<string, string[]> = {}): Promise<AdsetTarget[]> {
   const adsetIdList = [...new Set(adsetIds.filter(Boolean))];
   if (!adsetIdList.length) return [];
-  geocodeBudget = 12;
+  geocodeBudget = 20;
   const adsByAdset = new Map<string, string[]>(Object.entries(adIdsByAdset));
 
   const accountIds = new Set<string>();

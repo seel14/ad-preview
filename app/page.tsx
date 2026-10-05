@@ -312,6 +312,8 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
   const [customFont, setCustomFont] = useState("");
   const [targets, setTargets] = useState<AdsetTarget[]>([]);
@@ -1102,38 +1104,39 @@ export default function Home() {
       <header style={{ height: headerH, background: "#fff", borderBottom: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
         className="flex items-center justify-between px-5 flex-shrink-0">
         {/* Left: brand + breadcrumb */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", boxShadow: "0 2px 6px rgba(37,99,235,0.35)" }}>
             <svg className="w-4.5 h-4.5 text-white" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M15 10l4.553-2.069A1 1 0 0121 8.82V15.18a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
             </svg>
           </div>
-          <span className="text-sm font-bold text-slate-900 tracking-tight">Ad Preview</span>
+          <span className="hidden lg:inline text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">Ad Preview</span>
           {currentProject && (
             <>
-              <span className="text-slate-300 text-sm">/</span>
-              <span className="text-sm text-slate-500 truncate max-w-40">{currentProject.name}</span>
+              <span className="hidden lg:inline text-slate-300 text-sm">/</span>
+              <span className="text-sm font-medium lg:font-normal text-slate-600 lg:text-slate-500 truncate max-w-32 xl:max-w-48" title={currentProject.name}>{currentProject.name}</span>
             </>
           )}
         </div>
 
         {/* Center: tabs */}
-        <div className="flex items-center gap-0.5 rounded-xl p-1" style={{ background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+        <div className="flex items-center gap-0.5 rounded-xl p-1 flex-shrink-0" style={{ background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
           {TAB_META.map(({ id, label, icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer"
+              title={label}
+              className="flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap"
               style={activeTab === id
                 ? { background: "#fff", color: "#1e40af", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", border: "1px solid #dbeafe" }
                 : { color: "#64748b", border: "1px solid transparent" }}>
               <span style={{ color: activeTab === id ? "#2563eb" : "#94a3b8" }}>{icon}</span>
-              {label}
+              <span className={activeTab === id ? "" : "hidden xl:inline"}>{label}</span>
             </button>
           ))}
         </div>
 
-        {/* Right: export actions + FB + user */}
-        <div className="flex items-center gap-2">
+        {/* Right: share · export · facebook · user */}
+        <div className="flex items-center gap-2 flex-shrink-0">
 
           {currentProject && (
             <ShareManager project={{ id: currentProject.id, name: currentProject.name }} ads={ads} structure={structureNodes} targets={targets}
@@ -1144,28 +1147,48 @@ export default function Home() {
               }} />
           )}
 
-          {currentProject && (
-            <button onClick={openExportDialog} disabled={combineExporting}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-50"
-              style={{ color: "#fff", background: "#dc2626", border: "none" }}
-              title="เลือกสิ่งที่จะ Export เป็น PDF">
-              {combineExporting ? "กำลัง Export..." : "Export PDF"}
-            </button>
-          )}
+          {/* Export menu: one button instead of five */}
+          {currentProject && (() => {
+            const tabExport =
+              activeTab === "preview" && ads.length > 0 ? { label: "Ads PDF (เฉพาะแท็บนี้)", run: handleExportPDF, busy: exporting }
+              : activeTab === "timeline" && timeline.length > 0 ? { label: "Timeline PDF (เฉพาะแท็บนี้)", run: handleExportTimelinePDF, busy: timelineExporting }
+              : activeTab === "target" && targets.length > 0 ? { label: "Target PDF (เฉพาะแท็บนี้)", run: handleExportTargetPDF, busy: targetExporting }
+              : null;
+            const busy = combineExporting || exporting || timelineExporting || targetExporting;
+            const item = "w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default";
+            return (
+              <div style={{ position: "relative" }}>
+                <button onClick={() => { setExportMenuOpen(o => !o); setCoverOpen(false); }} disabled={busy}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                  style={{ color: "#fff", background: "#dc2626", border: "none" }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  {busy ? "กำลัง Export..." : "Export"}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                </button>
 
-          {/* PDF cover page settings */}
-          {currentProject && (
-            <div style={{ position: "relative" }}>
-              <button onClick={() => setCoverOpen(o => !o)}
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer"
-                style={{ color: "#475569", background: "#f8fafc", border: "1px solid #e2e8f0" }}
-                title="ตั้งค่าหน้าปก PDF">
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: cover.bg, border: "1px solid #cbd5e1", display: "inline-block" }} />
-                หน้าปก
-              </button>
-              {coverOpen && (
-                <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setCoverOpen(false)} />
+                {(exportMenuOpen || coverOpen) && <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => { setExportMenuOpen(false); setCoverOpen(false); }} />}
+
+                {exportMenuOpen && (
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: 250, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", overflow: "hidden" }}>
+                    <button className={item} onClick={() => { setExportMenuOpen(false); openExportDialog(); }}>
+                      <div style={{ fontWeight: 700, color: "#b91c1c" }}>Export PDF…</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}>เลือกหน้าและเรียงลำดับเอง</div>
+                    </button>
+                    <div style={{ height: 1, background: "#f1f5f9" }} />
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#94a3b8", padding: "8px 12px 2px", textTransform: "uppercase" }}>ทางลัด</div>
+                    <button className={item} disabled={ads.length === 0 && structureNodes.length === 0} onClick={() => { setExportMenuOpen(false); handleExportCombined(); }}>Combined PDF (Structure + Timeline + Ads)</button>
+                    {tabExport && <button className={item} onClick={() => { setExportMenuOpen(false); tabExport.run(); }}>{tabExport.label}</button>}
+                    <div style={{ height: 1, background: "#f1f5f9" }} />
+                    <button className={item} onClick={() => { setExportMenuOpen(false); setCoverOpen(true); }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: 3, background: cover.bg, border: "1px solid #cbd5e1", display: "inline-block" }} />
+                        ตั้งค่าหน้าปก PDF
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {coverOpen && (
                   <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: 240, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 14 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#334155", fontWeight: 600, marginBottom: 12, cursor: "pointer" }}>
                       <input type="checkbox" checked={cover.enabled} onChange={e => updateCover({ enabled: e.target.checked })} />
@@ -1189,89 +1212,61 @@ export default function Home() {
                       <div style={{ fontSize: 9, marginTop: 4 }}>{formatCoverDate()}</div>
                     </div>
                   </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Export zone — shown only when there's something to export */}
-          {(ads.length > 0 || (activeTab === "timeline" && timeline.length > 0)) && (
-            <>
-              <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
-              <div className="flex items-center gap-1" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "3px 4px" }}>
-                {ads.length > 0 && (
-                  <button onClick={handleExportCombined} disabled={exporting}
-                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
-                    style={{ color: exporting ? "#94a3b8" : "#6d28d9", background: exporting ? "transparent" : "#ede9fe", border: "none" }}
-                    title="Combined PDF (Structure + Ads)">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {exporting ? "..." : "Combined PDF"}
-                  </button>
-                )}
-                {ads.length > 0 && activeTab === "preview" && (
-                  <button onClick={handleExportPDF} disabled={exporting}
-                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
-                    style={{ color: exporting ? "#94a3b8" : "#b91c1c", background: exporting ? "transparent" : "#fee2e2", border: "none" }}
-                    title="Export Ads PDF only">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Ads PDF
-                  </button>
-                )}
-                {activeTab === "timeline" && timeline.length > 0 && (
-                  <button onClick={handleExportTimelinePDF} disabled={timelineExporting}
-                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-all duration-150 disabled:opacity-50 cursor-pointer"
-                    style={{ color: timelineExporting ? "#94a3b8" : "#b91c1c", background: timelineExporting ? "transparent" : "#fee2e2", border: "none" }}
-                    title="Export Timeline PDF">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    {timelineExporting ? "..." : "Timeline PDF"}
-                  </button>
                 )}
               </div>
-              <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
-            </>
-          )}
+            );
+          })()}
+
+          <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
 
           {/* Facebook connect / toggle — opens the right-side account & campaign browser */}
           {!fbConnected ? (
             <button
               onClick={handleFbConnect}
-              className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 cursor-pointer"
+              title="Connect Facebook"
+              className="flex items-center gap-1.5 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap"
               style={{ background: "linear-gradient(135deg,#1877F2,#0a5bb8)" }}>
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
               </svg>
-              Connect Facebook
+              <span className="hidden xl:inline">Connect Facebook</span><span className="xl:hidden">Connect</span>
             </button>
           ) : (
             <button
               onClick={() => setFbSidebarOpen(o => !o)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors duration-150 cursor-pointer"
+              title="Facebook Ads — เลือกบัญชีและโฆษณา"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 xl:px-3 py-1.5 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
               style={{ background: fbSidebarOpen ? "#eff6ff" : "#f8fafc", color: "#1e40af", border: "1px solid #bfdbfe" }}>
               <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="#1877F2">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
               </svg>
-              Facebook Ads
+              <span className="hidden xl:inline">Facebook Ads</span>
               <svg className="w-3 h-3 transition-transform" style={{ transform: fbSidebarOpen ? "rotate(180deg)" : "" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
           )}
 
-          <div className="flex items-center gap-2 pl-3 border-l border-slate-200 ml-1">
-            {session?.user?.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={session.user.image} alt="" className="w-7 h-7 rounded-full ring-2 ring-slate-100" />
-            )}
-            <button onClick={() => signOut()}
-              className="text-xs text-slate-400 hover:text-red-500 transition-colors duration-150 cursor-pointer">
-              ออกจากระบบ
+          {/* User: avatar with sign-out menu */}
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setUserMenuOpen(o => !o)} title={session?.user?.email ?? "บัญชี"} className="cursor-pointer flex items-center rounded-full">
+              {session?.user?.image
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={session.user.image} alt="" className="w-8 h-8 rounded-full ring-2 ring-slate-100" />
+                : <span className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{(session?.user?.name ?? "?").slice(0, 1)}</span>}
             </button>
+            {userMenuOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setUserMenuOpen(false)} />
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, width: 220, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", overflow: "hidden" }}>
+                  <div style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session?.user?.name}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session?.user?.email}</div>
+                  </div>
+                  <button onClick={() => signOut()} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 cursor-pointer">ออกจากระบบ</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>

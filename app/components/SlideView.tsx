@@ -34,6 +34,7 @@ interface AdData {
     };
   };
   previewHtml: string | null;
+  shareLink?: string | null;
   page?: { name: string; picture: string } | null;
 }
 
@@ -60,6 +61,9 @@ export default function SlideView({ ad, index, exportMode = false, albumImages }
     const m = ad.previewHtml.match(/src="([^"]+)"/);
     return m ? m[1].replace(/&amp;/g, "&") : null;
   })();
+
+  const shareLink = ad.shareLink ?? iframeSrc;
+  const shareLabel = shareLink ? shareLink.replace(/^https?:\/\//, "") : "";
 
   const slideW = 960;
   const slideH = Math.round(slideW * (210 / 297));
@@ -129,6 +133,15 @@ export default function SlideView({ ad, index, exportMode = false, albumImages }
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
+          </div>
+        )}
+        {shareLink && (
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 14, textAlign: "center", padding: "0 24px", zIndex: 10 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: "#94a3b8", textTransform: "uppercase", marginBottom: 2 }}>Preview link</div>
+            <a data-share-link href={shareLink} target="_blank" rel="noreferrer"
+              style={{ display: "inline-block", maxWidth: "100%", fontSize: 12, color: "#2563eb", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
+              {shareLabel}
+            </a>
           </div>
         )}
         {/* Slide number badge */}

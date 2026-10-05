@@ -699,6 +699,13 @@ export default function Home() {
           const yOffset = Math.max(0, (PDF_PAGE_H - imgH) / 2);
           if (!firstPage) pdf.addPage();
           pdf.addImage(imgData, "JPEG", 0, yOffset, PDF_PAGE_W, Math.min(imgH, PDF_PAGE_H));
+          // Make the on-slide preview link clickable in the PDF.
+          const anchor = el.querySelector<HTMLAnchorElement>("a[data-share-link]");
+          if (anchor) {
+            const er = el.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+            const k = PDF_PAGE_W / er.width;
+            pdf.link((ar.left - er.left) * k, yOffset + (ar.top - er.top) * k, ar.width * k, ar.height * k, { url: anchor.href });
+          }
           firstPage = false;
         }
         setCurrentIndex(0);

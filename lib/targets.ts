@@ -123,11 +123,13 @@ const toKm = (r: number | undefined, unit: string | undefined) => (r ? (unit ===
 
 let geocodeBudget = 12; // per request: keeps the call within the serverless time limit
 const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
+// `query` is a free-text search, or a `postalcode=10110&country=th` style structured search.
 async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
   if (geocodeCache.has(query)) return geocodeCache.get(query)!;
   let result: { lat: number; lng: number } | null = null;
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`, {
+    const search = query.startsWith("postalcode=") ? query : `q=${encodeURIComponent(query)}`;
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&${search}`, {
       headers: { "User-Agent": "ad-preview-app/1.0 (ad targeting report)", "Accept-Language": "en" },
     });
     const data = await res.json();
@@ -154,6 +156,19 @@ async function geoPointsFrom(geo: Json, excluded: boolean, countryNames: Intl.Di
     const pos = await geocode(q);
     if (pos) out.push({ label: c.name, ...pos, radiusKm: toKm(c.radius, c.distance_unit), excluded });
     if (!cached) await new Promise(r => setTimeout(r, 1100)); // Nominatim usage policy: max 1 request/second
+  }
+  // Postcodes come as codes only ("TH:10110") — pin the centre point of each one.
+  for (const z of (geo.zips ?? []).slice(0, 12)) {
+    const [cc, ...rest] = String(z.key ?? "").split(":");
+    const code = (z.name ?? rest.join(":") ?? "").toString().trim();
+    if (!code) continue;
+    const q = `postalcode=${encodeURIComponent(code)}${cc && cc.length === 2 ? `&country=${cc.toLowerCase()}` : ""}`;
+    const cached = geocodeCache.has(q);
+    if (!cached && geocodeBudget <= 0) continue;
+    if (!cached) geocodeBudget--;
+    const pos = await geocode(q);
+    if (pos) out.push({ label: code, ...pos, radiusKm: null, excluded });
+    if (!cached) await new Promise(r => setTimeout(r, 1100));
   }
   void countryNames;
   return out;

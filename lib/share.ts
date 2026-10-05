@@ -1,7 +1,9 @@
 import { redis, getProjects, saveProjects, type StructureNode } from "./redis";
 import { normalizeCreative, type RawCreative } from "./normalizeCreative";
 
-export type ShareScope = "both" | "preview" | "structure";
+export type ShareScope = "both" | "preview" | "structure" | "none";
+export const hasPreview = (s: ShareScope) => s === "both" || s === "preview";
+export const hasStructure = (s: ShareScope) => s === "both" || s === "structure";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ShareAd = { id: string; name: string; creative?: any; previewHtml?: string | null; albumImages?: string[]; page?: unknown; shareLink?: string | null; [k: string]: unknown };
@@ -24,8 +26,9 @@ export interface ShareRecord {
   projectId: string;
   projectName: string;
   scope: ShareScope;
+  includeTarget?: boolean;
   createdAt: number;
-  base: { structure: StructureNode[]; ads: ShareAd[]; adEdits: AdEdits };
+  base: { structure: StructureNode[]; ads: ShareAd[]; adEdits: AdEdits; targets?: unknown[] };
   draft?: { structure: StructureNode[]; adEdits: AdEdits };
   changes: ShareChange[];
   status: "idle" | "pending";
@@ -163,8 +166,8 @@ export async function acceptShare(rec: ShareRecord): Promise<boolean> {
   const projects = await getProjects(rec.ownerKey);
   const p = projects.find(x => x.id === rec.projectId);
   if (p) {
-    if (rec.scope !== "preview") p.structure = rec.draft.structure;
-    if (rec.scope !== "structure" && Array.isArray(p.cachedAds)) {
+    if (hasStructure(rec.scope)) p.structure = rec.draft.structure;
+    if (hasPreview(rec.scope) && Array.isArray(p.cachedAds)) {
       p.cachedAds = (p.cachedAds as ShareAd[]).map(ad => applyEditToAd(ad, rec.draft!.adEdits[ad.id]));
     }
     p.updatedAt = Date.now();
@@ -174,6 +177,7 @@ export async function acceptShare(rec: ShareRecord): Promise<boolean> {
     structure: rec.draft.structure,
     ads: rec.base.ads.map(ad => applyEditToAd(ad, rec.draft!.adEdits[ad.id])),
     adEdits: {},
+    targets: rec.base.targets,
   };
   rec.draft = undefined;
   rec.changes = [];

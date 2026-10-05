@@ -15,6 +15,7 @@ export async function GET() {
     projectId: s.projectId,
     projectName: s.projectName,
     scope: s.scope,
+    includeTarget: !!s.includeTarget,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
     status: s.status,
@@ -30,7 +31,8 @@ export async function POST(req: Request) {
   if (!redis) return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
 
   const body = await req.json().catch(() => null);
-  const scope: ShareScope = ["both", "preview", "structure"].includes(body?.scope) ? body.scope : "both";
+  const scope: ShareScope = ["both", "preview", "structure", "none"].includes(body?.scope) ? body.scope : "both";
+  const includeTarget = !!body?.includeTarget;
   const owner = session.user.partitionKey;
   const project = (await getProjects(owner)).find(p => p.id === body?.projectId);
   if (!project) return NextResponse.json({ error: "project_not_found" }, { status: 404 });
@@ -42,12 +44,14 @@ export async function POST(req: Request) {
     projectId: project.id,
     projectName: project.name,
     scope,
+    includeTarget,
     createdAt: now,
     updatedAt: now,
     base: {
       structure: project.structure ?? [],
       ads: Array.isArray(body?.ads) ? body.ads : (project.cachedAds as never[]) ?? [],
       adEdits: {},
+      targets: includeTarget ? (Array.isArray(body?.targets) ? body.targets : (project.cachedTargets as unknown[]) ?? []) : undefined,
     },
     changes: [],
     status: "idle",

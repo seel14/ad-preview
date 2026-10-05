@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getShare, saveShare, diffStructure, diffAdEdits, type AdEdits } from "@/lib/share";
+import { getShare, saveShare, diffStructure, diffAdEdits, hasPreview, hasStructure, type AdEdits } from "@/lib/share";
 import type { StructureNode } from "@/lib/redis";
 
 // Public endpoints (no login) — the unguessable token is the credential.
@@ -12,6 +12,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({
     projectName: rec.projectName,
     scope: rec.scope,
+    includeTarget: !!rec.includeTarget,
+    targets: rec.includeTarget ? (rec.base.targets ?? []) : [],
     status: rec.status,
     clientName: rec.clientName ?? "",
     ads: rec.base.ads,
@@ -35,8 +37,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ token: s
   let body: { structure?: unknown; adEdits?: unknown; clientName?: unknown };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "bad_json" }, { status: 400 }); }
 
-  const structure = rec.scope !== "preview" && isNodeArray(body.structure) ? body.structure : (rec.draft?.structure ?? rec.base.structure);
-  const adEdits: AdEdits = rec.scope !== "structure" && body.adEdits && typeof body.adEdits === "object"
+  const structure = hasStructure(rec.scope) && isNodeArray(body.structure) ? body.structure : (rec.draft?.structure ?? rec.base.structure);
+  const adEdits: AdEdits = hasPreview(rec.scope) && body.adEdits && typeof body.adEdits === "object"
     ? sanitizeEdits(body.adEdits as Record<string, unknown>)
     : (rec.draft?.adEdits ?? rec.base.adEdits);
 

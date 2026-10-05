@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import AdsStructure, { type StructureNode } from "../../components/AdsStructure";
+import { TargetSlide } from "../../components/TargetView";
+import type { AdsetTarget } from "@/lib/targets";
 import { normalizeCreative, type RawCreative } from "@/lib/normalizeCreative";
 
 interface ShareAd {
@@ -16,7 +18,9 @@ type AdEdits = Record<string, AdEdit>;
 
 interface ShareData {
   projectName: string;
-  scope: "both" | "preview" | "structure";
+  scope: "both" | "preview" | "structure" | "none";
+  includeTarget: boolean;
+  targets: AdsetTarget[];
   status: "idle" | "pending";
   clientName: string;
   ads: ShareAd[];
@@ -219,7 +223,9 @@ export default function SharePage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<ShareData | null>(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"preview" | "structure">("preview");
+  const [tab, setTab] = useState<"preview" | "structure" | "target">("preview");
+  const [targetIdx, setTargetIdx] = useState(0);
+  const [vw, setVw] = useState(1200);
   const [structure, setStructure] = useState<StructureNode[]>([]);
   const [adEdits, setAdEdits] = useState<AdEdits>({});
   const [clientName, setClientName] = useState("");
@@ -240,7 +246,7 @@ export default function SharePage() {
         setStructure(d.structure);
         setAdEdits(d.adEdits ?? {});
         setClientName(d.clientName ?? "");
-        setTab(d.scope === "structure" ? "structure" : "preview");
+        setTab(d.scope === "both" || d.scope === "preview" ? "preview" : d.scope === "structure" ? "structure" : "target");
         setView(window.innerWidth < 768 ? "list" : "chart");
         setPlatformId(d.structure[0]?.id ?? "");
         setInitial(JSON.stringify([d.structure, d.adEdits ?? {}]));
@@ -249,6 +255,13 @@ export default function SharePage() {
   }, [token]);
 
   const dirty = useMemo(() => !!data && JSON.stringify([structure, adEdits]) !== initial, [data, structure, adEdits, initial]);
+
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!dirty) return;
@@ -288,8 +301,16 @@ export default function SharePage() {
   if (error) return <main className="min-h-screen flex items-center justify-center p-6 text-slate-500">{error}</main>;
   if (!data) return <main className="min-h-screen flex items-center justify-center text-slate-400">กำลังโหลด...</main>;
 
-  const showPreview = data.scope !== "structure";
-  const showStructure = data.scope !== "preview";
+  const showPreview = data.scope === "both" || data.scope === "preview";
+  const showStructure = data.scope === "both" || data.scope === "structure";
+  const showTarget = data.includeTarget && data.targets.length > 0;
+  const tabs = [
+    ...(showPreview ? [["preview", "Ad Preview"] as const] : []),
+    ...(showStructure ? [["structure", "Ad Structure"] as const] : []),
+    ...(showTarget ? [["target", "Target"] as const] : []),
+  ];
+  const editable = showPreview || showStructure;
+  const slideScale = Math.min(1, (vw - 32) / 960);
 
   return (
     <main className="min-h-screen bg-slate-50 pb-28">
@@ -299,9 +320,9 @@ export default function SharePage() {
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ad Review</div>
             <h1 className="text-lg font-bold text-slate-900 truncate">{data.projectName}</h1>
           </div>
-          {showPreview && showStructure && (
+          {tabs.length > 1 && (
             <div className="flex bg-slate-100 rounded-xl p-1 self-start sm:self-auto">
-              {([["preview", "Ad Preview"], ["structure", "Ad Structure"]] as const).map(([k, label]) => (
+              {tabs.map(([k, label]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`px-4 py-1.5 text-sm font-semibold rounded-lg ${tab === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>{label}</button>
               ))}
@@ -326,6 +347,24 @@ export default function SharePage() {
                     onEdit={e => setAdEdits(prev => { const n = { ...prev }; if (e) n[ad.id] = e; else delete n[ad.id]; return n; })} />
                 ))}
               </div>
+        )}
+
+        {tab === "target" && showTarget && (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => setTargetIdx(i => Math.max(0, i - 1))} disabled={targetIdx === 0} className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">‹</button>
+              <span className="text-xs text-slate-500">{targetIdx + 1} / {data.targets.length}</span>
+              <button onClick={() => setTargetIdx(i => Math.min(data.targets.length - 1, i + 1))} disabled={targetIdx === data.targets.length - 1} className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">›</button>
+              <select value={targetIdx} onChange={e => setTargetIdx(Number(e.target.value))} className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white min-w-0 max-w-full">
+                {data.targets.map((t, i) => <option key={t.adsetId} value={i}>{t.adsetName}</option>)}
+              </select>
+            </div>
+            <div style={{ width: 960 * slideScale, height: 679 * slideScale, margin: "0 auto", overflow: "hidden" }}>
+              <div style={{ width: 960, transform: `scale(${slideScale})`, transformOrigin: "top left" }}>
+                <TargetSlide item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
+              </div>
+            </div>
+          </>
         )}
 
         {tab === "structure" && showStructure && (
@@ -357,7 +396,7 @@ export default function SharePage() {
         )}
       </div>
 
-      <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+      {editable && <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="ชื่อของคุณ (ไม่บังคับ)"
             className="sm:w-56 text-sm border border-slate-200 rounded-lg px-3 py-2" />
@@ -367,7 +406,7 @@ export default function SharePage() {
             {saving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
           </button>
         </div>
-      </div>
+      </div>}
     </main>
   );
 }

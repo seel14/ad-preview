@@ -1120,7 +1120,7 @@ export default function Home() {
         <div className="flex items-center gap-2">
 
           {currentProject && (
-            <ShareManager project={{ id: currentProject.id, name: currentProject.name }} ads={ads} structure={structureNodes}
+            <ShareManager project={{ id: currentProject.id, name: currentProject.name }} ads={ads} structure={structureNodes} targets={targets}
               onApplied={async () => {
                 const data = await reloadProjects();
                 const fresh = data?.find(x => x.id === currentId);

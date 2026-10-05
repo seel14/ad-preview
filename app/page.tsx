@@ -283,6 +283,15 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState<Tab>("preview");
 
+  // Tutorial (public/guide.html) — opens once automatically for first-time users, then via the header "คู่มือ" button
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    try {
+      if (!localStorage.getItem("guideSeen")) { setGuideOpen(true); localStorage.setItem("guideSeen", "1"); }
+    } catch { /* storage blocked — skip auto-open */ }
+  }, [status]);
+
   const {
     fbConnected, fbAdAccounts, fbSelectedAccount, setFbSelectedAccount, fbAds, fbCampaigns,
     fbCampaignFilter, setFbCampaignFilter, fbAccountSearch, setFbAccountSearch,
@@ -1246,6 +1255,14 @@ export default function Home() {
             );
           })()}
 
+          <button
+            onClick={() => setGuideOpen(true)}
+            title="คู่มือการใช้งาน (สำหรับผู้ใช้ใหม่)"
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap"
+            style={{ background: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" }}>
+            <span aria-hidden>📖</span><span className="hidden xl:inline">คู่มือ</span>
+          </button>
+
           <div style={{ width: 1, height: 24, background: "#e2e8f0" }} />
 
           {/* Facebook connect / toggle — opens the right-side account & campaign browser */}
@@ -1897,6 +1914,24 @@ export default function Home() {
           </div>
         );
       })()}
+      {guideOpen && (
+        <div onClick={() => setGuideOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: "min(1200px, 100%)", background: "#0b1220", borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", background: "#0f172a", color: "#e2e8f0", fontSize: 13 }}>
+              <span style={{ fontWeight: 700 }}>📖 คู่มือการใช้งาน Ad Preview</span>
+              <span style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <a href="/guide.html" target="_blank" rel="noreferrer" style={{ color: "#93c5fd", fontSize: 12 }}>เปิดเต็มจอ ↗</a>
+                <button onClick={() => setGuideOpen(false)} className="cursor-pointer" style={{ background: "none", border: "none", color: "#e2e8f0", fontSize: 18, lineHeight: 1 }} aria-label="ปิด">✕</button>
+              </span>
+            </div>
+            <iframe src="/guide.html" title="คู่มือการใช้งาน" allow="autoplay; speech-synthesis"
+              style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: "calc(100vh - 120px)", border: "none", background: "#05080f" }} />
+          </div>
+        </div>
+      )}
+
       {dlgOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setDlgOpen(false)}>

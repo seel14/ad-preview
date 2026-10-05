@@ -31,6 +31,7 @@ export interface AdsetTarget {
   placements: string[];
   devices: string[];
   advantage: string[];
+  audienceSize: { lower: number; upper: number; daily: number | null } | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -318,8 +319,19 @@ export async function getAdsetTargets(adsetIds: string[], token: string, adIdsBy
         placements: placementLines(t),
         devices: [...(t.device_platforms ?? []).map(titleCase), ...(t.user_os ?? [])],
         advantage,
+        audienceSize: null,
       });
     }
   }
+  // Audience size = Meta's delivery estimate for each ad set (monthly potential reach range + daily estimate).
+  const sizes = await Promise.all(results.map(async r => {
+    try {
+      const d = await graph(`${BASE}/${r.adsetId}/delivery_estimate?fields=estimate_dau,estimate_mau_lower_bound,estimate_mau_upper_bound,estimate_ready&access_token=${token}`);
+      const e = d?.data?.[0];
+      if (!e || e.estimate_mau_upper_bound == null) return null;
+      return { lower: Number(e.estimate_mau_lower_bound ?? 0), upper: Number(e.estimate_mau_upper_bound), daily: e.estimate_dau != null ? Number(e.estimate_dau) : null };
+    } catch { return null; }
+  }));
+  results.forEach((r, i) => { r.audienceSize = sizes[i]; });
   return results;
 }

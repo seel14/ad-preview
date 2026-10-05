@@ -158,6 +158,12 @@ function LocationNames({ names, points, offset, tone }: { names: string[]; point
   );
 }
 
+function compact(n: number) {
+  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(n);
+}
+
 export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Record<string, string> }) {
   const st = STATUS_COLOR[item.status] ?? { bg: "#e2e8f0", fg: "#475569" };
   const names = item.adIds.map(id => adNames[id]).filter(Boolean);
@@ -228,6 +234,21 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+          <Section title="Audience Size">
+            {item.audienceSize ? (
+              <>
+                <div style={{ fontSize: 30, fontWeight: 800, color: "#1e40af", lineHeight: 1.2 }}>
+                  {compact(item.audienceSize.lower)} – {compact(item.audienceSize.upper)}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>จำนวนคนที่เข้าถึงได้โดยประมาณต่อเดือน (Potential reach)</div>
+                {item.audienceSize.daily != null && (
+                  <div style={{ fontSize: 12, color: "#334155", marginTop: 8 }}>
+                    ประมาณการต่อวัน: <b>{compact(item.audienceSize.daily)}</b>
+                  </div>
+                )}
+              </>
+            ) : <span style={{ fontSize: 12, color: "#94a3b8" }}>ไม่มีข้อมูล (กด "รีเฟรช Target" หรือ Facebook ไม่ส่งค่าประมาณมา)</span>}
+          </Section>
           <Section title="Placements" grow>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {item.placements.map((p, i) => <div key={i} style={{ fontSize: 11, color: "#0f172a" }}>{p}</div>)}

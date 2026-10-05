@@ -22,6 +22,7 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   cachedAds?: unknown[];
+  cachedTargets?: unknown[];
 }
 
 // Owns the list of Projects, which one is active, and persisting changes to Redis

@@ -8,6 +8,7 @@ import AdsStructure, { type StructureNode } from "./components/AdsStructure";
 import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
+import TargetView, { type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
 interface AdData {
@@ -36,7 +37,7 @@ interface AdData {
   page?: { name: string; picture: string } | null;
 }
 
-type Tab = "preview" | "structure" | "timeline";
+type Tab = "preview" | "structure" | "timeline" | "target";
 
 // Ad names repeat across ad sets (same creative reused) — collapse to one row per
 // unique name, keeping the first Ad ID encountered as the representative to add/load.
@@ -140,7 +141,7 @@ async function applyExportFont(cfg: FontCfg): Promise<() => void> {
   }
   activeExportFont = family;
   const style = document.createElement("style");
-  style.textContent = `#structure-chart, #structure-chart *, #timeline-chart, #timeline-chart *, #export-slide, #export-slide * { font-family: "${family}", Helvetica, Arial, sans-serif !important; }`;
+  style.textContent = `#structure-chart, #structure-chart *, #timeline-chart, #timeline-chart *, #export-slide, #export-slide *, #export-target-slide, #export-target-slide * { font-family: "${family}", Helvetica, Arial, sans-serif !important; }`;
   document.head.appendChild(style);
   return () => { style.remove(); activeExportFont = ""; };
 }
@@ -273,7 +274,8 @@ type ExportSection =
   | { kind: "timeline" }
   | { kind: "divider"; title: string; subtitle: string }
   | { kind: "ads"; ads: AdData[] }
-  | { kind: "grid"; title: string; ads: AdData[] };
+  | { kind: "grid"; title: string; ads: AdData[] }
+  | { kind: "target"; items: AdsetTarget[] };
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -312,8 +314,14 @@ export default function Home() {
   const [coverOpen, setCoverOpen] = useState(false);
   const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
   const [customFont, setCustomFont] = useState("");
+  const [targets, setTargets] = useState<AdsetTarget[]>([]);
+  const [targetIndex, setTargetIndex] = useState(0);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetError, setTargetError] = useState("");
+  const [targetExporting, setTargetExporting] = useState(false);
+  const [dlgTarget, setDlgTarget] = useState(true);
   const [dlgOpen, setDlgOpen] = useState(false);
-  const [dlgOrder, setDlgOrder] = useState<string[]>(["cover", "ads", "folders", "structure", "timeline"]);
+  const [dlgOrder, setDlgOrder] = useState<string[]>(["cover", "ads", "folders", "structure", "timeline", "target"]);
   const [dlgAds, setDlgAds] = useState(true);
   const [dlgFolders, setDlgFolders] = useState(false);
   const [dlgStructure, setDlgStructure] = useState(true);
@@ -367,6 +375,9 @@ export default function Home() {
     setToken(currentProject?.token ?? "");
     setAdIdsInput(currentProject?.adIds.join("\n") ?? "");
     setAds((currentProject?.cachedAds as AdData[] | undefined) ?? []);
+    setTargets((currentProject?.cachedTargets as AdsetTarget[] | undefined) ?? []);
+    setTargetIndex(0);
+    setTargetError("");
     setCurrentIndex(0);
     setStatusMsg("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -604,6 +615,23 @@ export default function Home() {
       } else if (section.kind === "divider") {
         addDividerPage(pdf, section.title, section.subtitle, firstPage);
         firstPage = false;
+      } else if (section.kind === "target") {
+        if (section.items.length === 0) continue;
+        setActiveTab("target");
+        await new Promise(r => setTimeout(r, 500));
+        for (let i = 0; i < section.items.length; i++) {
+          setTargetIndex(i);
+          setStatusMsg(`กำลัง render Target ${i + 1}/${section.items.length}...`);
+          await new Promise(r => setTimeout(r, 600));
+          const el = document.getElementById("export-target-slide");
+          if (!el) continue;
+          const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#f8fafc" });
+          const imgH = (canvas.height / canvas.width) * PDF_PAGE_W;
+          if (!firstPage) pdf.addPage();
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, Math.max(0, (PDF_PAGE_H - imgH) / 2), PDF_PAGE_W, Math.min(imgH, PDF_PAGE_H));
+          firstPage = false;
+        }
+        setTargetIndex(0);
       } else if (section.kind === "grid") {
         if (section.ads.length === 0) continue;
         setActiveTab("preview");
@@ -831,6 +859,47 @@ export default function Home() {
     }
   }
 
+  const targetAdIds = ads.map(a => a.id).filter(id => /^\d+$/.test(id));
+  const adNameById: Record<string, string> = Object.fromEntries(ads.map(a => [a.id, a.name]));
+
+  async function fetchTargets() {
+    if (!token.trim() || targetAdIds.length === 0) return;
+    setTargetLoading(true);
+    setTargetError("");
+    try {
+      const r = await fetch("/api/targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.trim(), adIds: targetAdIds }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error ?? "ดึง Target ไม่สำเร็จ");
+      setTargets(data);
+      setTargetIndex(0);
+      await patchProject({ cachedTargets: data });
+    } catch (e) {
+      setTargetError(e instanceof Error ? e.message : "ดึง Target ไม่สำเร็จ");
+    } finally {
+      setTargetLoading(false);
+    }
+  }
+
+  async function handleExportTargetPDF() {
+    if (!targets.length) return;
+    setTargetExporting(true);
+    setExportMode(true);
+    try {
+      const pdf = await renderSectionsToPdf([{ kind: "target", items: targets }]);
+      pdf.save(exportFileName("Target", "pdf"));
+    } catch (e) {
+      console.error(e);
+      alert("Export ล้มเหลว");
+    } finally {
+      setTargetExporting(false);
+      setExportMode(false);
+    }
+  }
+
   function openExportDialog() {
     setDlgListIds(new Set(savedLists.map(l => l.id)));
     setDlgPlatformIds(new Set(structureNodes.map(n => n.id)));
@@ -838,6 +907,7 @@ export default function Home() {
     setDlgFolders(false);
     setDlgStructure(structureNodes.length > 0);
     setDlgTimeline(timeline.length > 0);
+    setDlgTarget(targets.length > 0);
     setDlgOpen(true);
   }
 
@@ -847,10 +917,11 @@ export default function Home() {
     const platformIds = dlgStructure ? [...dlgPlatformIds] : [];
     const useAds = dlgAds && ads.length > 0;
     const useTimeline = dlgTimeline && timeline.length > 0;
+    const useTarget = dlgTarget && targets.length > 0;
     const active: Record<string, boolean> = {
-      ads: useAds, folders: lists.length > 0, structure: platformIds.length > 0, timeline: useTimeline,
+      ads: useAds, folders: lists.length > 0, structure: platformIds.length > 0, timeline: useTimeline, target: useTarget,
     };
-    const partLabel: Record<string, string> = { ads: "Ads Preview", folders: "Ads Grid", structure: "Structure", timeline: "Timeline" };
+    const partLabel: Record<string, string> = { ads: "Ads Preview", folders: "Ads Grid", structure: "Structure", timeline: "Timeline", target: "Target" };
     const parts = dlgOrder.filter(k => active[k]).map(k => partLabel[k]);
     if (parts.length === 0 && !cover.enabled) return;
     if (lists.length && !token.trim()) { alert("ต้องมี Token เพื่อโหลด Ads ใน Folder"); return; }
@@ -873,6 +944,7 @@ export default function Home() {
         }
         else if (key === "structure" && platformIds.length) sections.push({ kind: "structure", platformIds });
         else if (key === "timeline" && useTimeline) sections.push({ kind: "timeline" });
+        else if (key === "target" && useTarget) sections.push({ kind: "target", items: targets });
       }
 
       const pdf = await renderSectionsToPdf(sections);
@@ -964,6 +1036,10 @@ export default function Home() {
     {
       id: "structure", label: "Ads Structure",
       icon: <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h16M4 12h10M4 19h6" /></svg>,
+    },
+    {
+      id: "target", label: "Target",
+      icon: <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth={2} /><circle cx="12" cy="12" r="4" strokeWidth={2} /><path strokeLinecap="round" strokeWidth={2} d="M12 1v4M12 19v4M1 12h4M19 12h4" /></svg>,
     },
     {
       id: "timeline", label: "Timeline",
@@ -1473,6 +1549,18 @@ export default function Home() {
               </div>
             )}
           </div>
+        ) : activeTab === "target" ? (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {currentProject ? (
+              <TargetView targets={targets} adNames={adNameById} index={targetIndex} onIndexChange={setTargetIndex}
+                loading={targetLoading} error={targetError} onFetch={fetchTargets} canFetch={!!token.trim() && targetAdIds.length > 0}
+                onExportPdf={handleExportTargetPDF} exporting={targetExporting} exportMode={exportMode} />
+            ) : (
+              <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
+                เลือก Project ก่อน
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             {currentProject ? (
@@ -1670,6 +1758,7 @@ export default function Home() {
                     </label>
                   )))}
                   {key === "timeline" && row("Ad Timeline", timeline.length ? `${timeline.length} เหตุการณ์` : "ยังไม่มี Timeline", dlgTimeline, timeline.length === 0, setDlgTimeline)}
+                  {key === "target" && row("Target (ต่อ Ad Set)", targets.length ? `${targets.length} Ad Set (1 หน้าต่อ Ad Set)` : "ยังไม่ได้ดึง Target (ไปที่แท็บ Target)", dlgTarget, targets.length === 0, setDlgTarget)}
                 </div>
               );
             })}
@@ -1707,7 +1796,7 @@ export default function Home() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setDlgOpen(false)} className="cursor-pointer" style={{ fontSize: 12, padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b" }}>ยกเลิก</button>
               <button onClick={handleExportCustom} className="cursor-pointer font-semibold"
-                disabled={!cover.enabled && !(dlgAds && ads.length) && !(dlgFolders && dlgListIds.size) && !(dlgStructure && dlgPlatformIds.size) && !(dlgTimeline && timeline.length)}
+                disabled={!cover.enabled && !(dlgAds && ads.length) && !(dlgFolders && dlgListIds.size) && !(dlgStructure && dlgPlatformIds.size) && !(dlgTimeline && timeline.length) && !(dlgTarget && targets.length)}
                 style={{ fontSize: 12, padding: "7px 16px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", opacity: 1 }}>
                 Export
               </button>

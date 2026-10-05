@@ -42,6 +42,7 @@ export interface Project {
   structure?: StructureNode[];
   timeline?: TimelineEntry[];
   cachedAds?: unknown[];
+  cachedTargets?: unknown[];
   createdAt: number;
   updatedAt: number;
 }

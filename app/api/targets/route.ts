@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { FacebookApiError } from "@/lib/facebook";
 import { getAdsetTargets } from "@/lib/targets";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const token = typeof body?.token === "string" ? body.token.trim() : "";

@@ -622,7 +622,7 @@ export default function Home() {
         for (let i = 0; i < section.items.length; i++) {
           setTargetIndex(i);
           setStatusMsg(`กำลัง render Target ${i + 1}/${section.items.length}...`);
-          await new Promise(r => setTimeout(r, 600));
+          await new Promise(r => setTimeout(r, 1800)); // map tiles need a moment to load
           const el = document.getElementById("export-target-slide");
           if (!el) continue;
           const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#f8fafc" });

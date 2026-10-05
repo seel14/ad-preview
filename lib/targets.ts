@@ -2,6 +2,8 @@ import { FacebookApiError } from "@/lib/facebook";
 
 const BASE = "https://graph.facebook.com/v21.0";
 
+export interface GeoPoint { label: string; lat: number; lng: number; radiusKm: number | null; excluded: boolean }
+
 export interface TargetGroup { label: string; items: string[] }
 
 export interface AdsetTarget {
@@ -18,6 +20,7 @@ export interface AdsetTarget {
   locations: string[];
   excludedLocations: string[];
   locationTypes: string[];
+  geoPoints: GeoPoint[];
   age: string;
   genders: string;
   detailed: TargetGroup[];
@@ -102,6 +105,46 @@ const LOCATION_TYPE_LABEL: Record<string, string> = {
   travel_in: "คนที่เดินทางมาในพื้นที่",
 };
 
+const toKm = (r: number | undefined, unit: string | undefined) => (r ? (unit === "mile" ? r * 1.609344 : r) : null);
+
+let geocodeBudget = 12; // per request: keeps the call within the serverless time limit
+const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
+async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
+  if (geocodeCache.has(query)) return geocodeCache.get(query)!;
+  let result: { lat: number; lng: number } | null = null;
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`, {
+      headers: { "User-Agent": "ad-preview-app/1.0 (ad targeting report)", "Accept-Language": "en" },
+    });
+    const data = await res.json();
+    if (Array.isArray(data) && data[0]) result = { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+  } catch { /* map is optional */ }
+  geocodeCache.set(query, result);
+  return result;
+}
+
+// Pin drops carry coordinates; cities only have a name + radius, so they are geocoded (OpenStreetMap Nominatim).
+async function geoPointsFrom(geo: Json, excluded: boolean, countryNames: Intl.DisplayNames | null): Promise<GeoPoint[]> {
+  if (!geo) return [];
+  const out: GeoPoint[] = [];
+  for (const c of geo.custom_locations ?? []) {
+    if (c.latitude == null || c.longitude == null) continue;
+    out.push({ label: c.name ?? "Pin", lat: Number(c.latitude), lng: Number(c.longitude), radiusKm: toKm(c.radius, c.distance_unit), excluded });
+  }
+  for (const c of (geo.cities ?? []).slice(0, 10)) {
+    const country = c.country ? (new Intl.DisplayNames(["en"], { type: "region" }).of(c.country) ?? c.country) : "";
+    const q = [c.name, c.region, country].filter(Boolean).join(", ");
+    const cached = geocodeCache.has(q);
+    if (!cached && geocodeBudget <= 0) continue;
+    if (!cached) geocodeBudget--;
+    const pos = await geocode(q);
+    if (pos) out.push({ label: c.name, ...pos, radiusKm: toKm(c.radius, c.distance_unit), excluded });
+    if (!cached) await new Promise(r => setTimeout(r, 1100)); // Nominatim usage policy: max 1 request/second
+  }
+  void countryNames;
+  return out;
+}
+
 function placementLines(t: Json): string[] {
   const platforms: string[] | undefined = t.publisher_platforms;
   if (!platforms?.length) return ["Advantage+ placements (อัตโนมัติ)"];
@@ -127,6 +170,7 @@ const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString("th-TH"
 export async function getAdsetTargets(adIds: string[], token: string): Promise<AdsetTarget[]> {
   const ids = [...new Set(adIds.filter(Boolean))];
   if (!ids.length) return [];
+  geocodeBudget = 12;
 
   const adToAdset = new Map<string, string>();
   const accountIds = new Set<string>();
@@ -186,6 +230,7 @@ export async function getAdsetTargets(adIds: string[], token: string): Promise<A
         locations: geoList(t.geo_locations, regionNames),
         excludedLocations: geoList(t.excluded_geo_locations, regionNames),
         locationTypes: (t.geo_locations?.location_types ?? []).map((x: string) => LOCATION_TYPE_LABEL[x] ?? x),
+        geoPoints: [...(await geoPointsFrom(t.geo_locations, false, regionNames)), ...(await geoPointsFrom(t.excluded_geo_locations, true, regionNames))],
         age: ageMax >= 65 ? `${ageMin} – 65+` : `${ageMin} – ${ageMax}`,
         genders: !genders.length || genders.length > 1 ? "ทุกเพศ" : genders[0] === 1 ? "ชาย" : "หญิง",
         detailed: groupsFrom(t.flexible_spec),

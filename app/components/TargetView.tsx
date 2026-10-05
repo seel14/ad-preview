@@ -1,6 +1,6 @@
 "use client";
 
-import type { AdsetTarget, TargetGroup } from "@/lib/targets";
+import type { AdsetTarget, GeoPoint, TargetGroup } from "@/lib/targets";
 
 export type { AdsetTarget };
 
@@ -60,6 +60,72 @@ function Groups({ groups, tone }: { groups: TargetGroup[]; tone: "blue" | "red" 
   );
 }
 
+const TILE = 256;
+const R_EARTH_PX0 = 156543.03392; // metres per pixel at zoom 0, equator
+
+function project(lat: number, lng: number, z: number) {
+  const n = 2 ** z * TILE;
+  const x = ((lng + 180) / 360) * n;
+  const sin = Math.sin((lat * Math.PI) / 180);
+  const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * n;
+  return { x, y };
+}
+
+// Static OpenStreetMap tiles + SVG circles (no map library, so html2canvas captures it reliably for PDF).
+function LocationMap({ points, width, height }: { points: GeoPoint[]; width: number; height: number }) {
+  if (!points.length) return null;
+  // bounding box of every circle (default ~3 km halo for points without a radius)
+  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+  for (const p of points) {
+    const r = (p.radiusKm ?? 3) * 1.15;
+    const dLat = r / 111.32;
+    const dLng = r / (111.32 * Math.max(0.2, Math.cos((p.lat * Math.PI) / 180)));
+    minLat = Math.min(minLat, p.lat - dLat); maxLat = Math.max(maxLat, p.lat + dLat);
+    minLng = Math.min(minLng, p.lng - dLng); maxLng = Math.max(maxLng, p.lng + dLng);
+  }
+  let z = 16;
+  for (; z > 1; z--) {
+    const a = project(maxLat, minLng, z), b = project(minLat, maxLng, z);
+    if (b.x - a.x <= width && b.y - a.y <= height) break;
+  }
+  const c = project((minLat + maxLat) / 2, (minLng + maxLng) / 2, z);
+  const left = c.x - width / 2, top = c.y - height / 2;
+  const n = 2 ** z;
+  const tiles: { key: string; src: string; x: number; y: number }[] = [];
+  for (let ty = Math.floor(top / TILE); ty <= Math.floor((top + height) / TILE); ty++) {
+    for (let tx = Math.floor(left / TILE); tx <= Math.floor((left + width) / TILE); tx++) {
+      if (ty < 0 || ty >= n) continue;
+      const wx = ((tx % n) + n) % n;
+      tiles.push({ key: `${tx}/${ty}`, src: `https://tile.openstreetmap.org/${z}/${wx}/${ty}.png`, x: tx * TILE - left, y: ty * TILE - top });
+    }
+  }
+  return (
+    <div style={{ position: "relative", width, height, overflow: "hidden", borderRadius: 8, border: "1px solid #e2e8f0", background: "#e5e7eb", marginTop: 8 }}>
+      {tiles.map(t => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={t.key} src={t.src} alt="" crossOrigin="anonymous" draggable={false}
+          style={{ position: "absolute", left: t.x, top: t.y, width: TILE, height: TILE }} />
+      ))}
+      <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
+        {points.map((p, i) => {
+          const pos = project(p.lat, p.lng, z);
+          const mpp = (R_EARTH_PX0 * Math.cos((p.lat * Math.PI) / 180)) / 2 ** z;
+          const rpx = p.radiusKm ? Math.max(5, (p.radiusKm * 1000) / mpp) : 0;
+          const color = p.excluded ? "#dc2626" : "#2563eb";
+          const cx = pos.x - left, cy = pos.y - top;
+          return (
+            <g key={i}>
+              {rpx > 0 && <circle cx={cx} cy={cy} r={rpx} fill={color} fillOpacity={0.18} stroke={color} strokeWidth={2} />}
+              <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ position: "absolute", right: 3, bottom: 2, fontSize: 8, color: "#334155", background: "rgba(255,255,255,0.75)", padding: "0 3px", borderRadius: 3 }}>© OpenStreetMap contributors</div>
+    </div>
+  );
+}
+
 export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Record<string, string> }) {
   const st = STATUS_COLOR[item.status] ?? { bg: "#e2e8f0", fg: "#475569" };
   const names = item.adIds.map(id => adNames[id]).filter(Boolean);
@@ -81,6 +147,14 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
           <Section title="Locations" grow>
             {item.locations.length ? <Chips items={item.locations} /> : <Empty />}
             {item.locationTypes.length > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{item.locationTypes.join(" · ")}</div>}
+            <LocationMap points={item.geoPoints ?? []} width={264} height={150} />
+            {(item.geoPoints ?? []).length > 0 && (
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+                {item.geoPoints.map((p, i) => (
+                  <span key={i}><b style={{ color: p.excluded ? "#dc2626" : "#2563eb" }}>●</b> {p.label}{p.radiusKm ? ` · รัศมี ${Number(p.radiusKm.toFixed(1))} กม.` : ""}</span>
+                ))}
+              </div>
+            )}
             {item.excludedLocations.length > 0 && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#b91c1c", marginBottom: 2 }}>ยกเว้นพื้นที่</div>

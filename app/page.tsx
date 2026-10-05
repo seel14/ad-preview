@@ -312,6 +312,7 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [adNameCache, setAdNameCache] = useState<Record<string, string>>({});
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
@@ -386,6 +387,13 @@ export default function Home() {
     setStatusMsg("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId]);
+
+  // Remember ad names by ID so the ID list in the sidebar can show what each ID is.
+  useEffect(() => {
+    const add: Record<string, string> = {};
+    for (const a of ads) if (a.status !== "ERROR" && a.name && !a.id.startsWith("link-")) add[a.id] = a.name;
+    if (Object.keys(add).length) setAdNameCache(prev => ({ ...prev, ...add }));
+  }, [ads]);
 
   // Each Project remembers its own ad account: switching Project (or connecting Facebook) re-selects it.
   useEffect(() => {
@@ -1410,6 +1418,33 @@ export default function Home() {
                   onBlur={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}
                 />
                 <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>ใส่ Ad ID หรือ fb.me link ทีละบรรทัด</p>
+                {(() => {
+                  const lines = adIdsInput.split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+                  if (!lines.length) return null;
+                  const known = lines.filter(l => adNameCache[l]).length;
+                  return (
+                    <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", overflow: "hidden" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontSize: 10, fontWeight: 700, color: "#64748b" }}>
+                        <span>ชื่อ Ads ({lines.length})</span>
+                        {known < lines.length && <span style={{ fontWeight: 500, color: "#94a3b8" }}>กด "โหลด Ads" เพื่อดูชื่อที่เหลือ</span>}
+                      </div>
+                      <div style={{ maxHeight: 170, overflowY: "auto" }}>
+                        {lines.map((l, i) => {
+                          const isLink = /^https?:\/\//i.test(l);
+                          const name = adNameCache[l];
+                          return (
+                            <div key={i} style={{ padding: "4px 10px", borderBottom: i < lines.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: name ? "#0f172a" : "#94a3b8", lineHeight: 1.35, wordBreak: "break-word" }}>
+                                {name ?? (isLink ? "ลิงก์ Preview" : "ยังไม่ได้โหลดชื่อ")}
+                              </div>
+                              <div style={{ fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Load button */}

@@ -313,6 +313,8 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
+  const [listAddText, setListAddText] = useState<Record<string, string>>({});
   const [adNameCache, setAdNameCache] = useState<Record<string, string>>({});
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -568,6 +570,16 @@ export default function Home() {
     setAdIdsInput(text);
     persistTokenAndAdIds(token, text);
     void handleLoad(merged);
+  }
+
+  async function setListAdIds(listId: string, adIds: string[]) {
+    await patchProject({ savedLists: savedLists.map(l => l.id === listId ? { ...l, adIds: Array.from(new Set(adIds)) } : l) });
+  }
+
+  async function handleRenameList(list: SavedList) {
+    const name = prompt("เปลี่ยนชื่อ List:", list.name);
+    if (!name?.trim()) return;
+    await patchProject({ savedLists: savedLists.map(l => l.id === list.id ? { ...l, name: name.trim() } : l) });
   }
 
   async function handleDeleteList(listId: string) {
@@ -1483,12 +1495,16 @@ export default function Home() {
                     <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>Saved Lists</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    {savedLists.map(list => (
-                      <div key={list.id}
-                        className="group flex items-center gap-2 rounded-lg transition-colors duration-150"
-                        style={{ padding: "7px 9px", border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "#fff")}>
+                    {savedLists.map(list => {
+                      const open = expandedLists.has(list.id);
+                      const toggleOpen = () => setExpandedLists(prev => { const n = new Set(prev); if (n.has(list.id)) n.delete(list.id); else n.add(list.id); return n; });
+                      const addText = listAddText[list.id] ?? "";
+                      const addable = ads.filter(a => !a.id.startsWith("link-") && a.status !== "ERROR" && !list.adIds.includes(a.id));
+                      return (
+                      <div key={list.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.03)", overflow: "hidden" }}>
+                      <div
+                        className="group flex items-center gap-2 transition-colors duration-150"
+                        style={{ padding: "7px 9px", background: open ? "#f8fafc" : "#fff" }}>
                         <input type="checkbox" className="cursor-pointer flex-shrink-0"
                           checked={selectedListIds.has(list.id)}
                           onChange={e => {
@@ -1499,10 +1515,11 @@ export default function Home() {
                             });
                           }}
                         />
-                        <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        <svg className="w-3 h-3 flex-shrink-0 transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }} fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                         </svg>
-                        <span onClick={() => handleLoadList(list)} className="flex-1 truncate cursor-pointer"
+                        <span onClick={toggleOpen} className="flex-1 truncate cursor-pointer"
+                          title="คลิกเพื่อดู/แก้ไข Ads ใน List"
                           style={{ fontSize: 11, color: "#334155" }}>
                           {list.name}
                           <span style={{ color: "#94a3b8", marginLeft: 4 }}>({list.adIds.length})</span>
@@ -1510,6 +1527,7 @@ export default function Home() {
                         <button onClick={() => handleDeleteList(list.id)}
                           className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                           style={{ color: "#cbd5e1" }}
+                          title="ลบ List"
                           onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
                           onMouseLeave={e => (e.currentTarget.style.color = "#cbd5e1")}>
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1517,7 +1535,54 @@ export default function Home() {
                           </svg>
                         </button>
                       </div>
-                    ))}
+                      {open && (
+                        <div style={{ borderTop: "1px solid #e2e8f0", padding: "6px 9px 9px" }}>
+                          <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+                            <button onClick={() => handleLoadList(list)} className="cursor-pointer" style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>ใส่ใน Ad IDs ด้านบน</button>
+                            <button onClick={() => handleRenameList(list)} className="cursor-pointer" style={{ fontSize: 10, color: "#64748b" }}>เปลี่ยนชื่อ</button>
+                          </div>
+                          {list.adIds.length === 0 && <div style={{ fontSize: 10, color: "#94a3b8", padding: "4px 0" }}>List นี้ยังไม่มี Ads</div>}
+                          <div style={{ maxHeight: 190, overflowY: "auto" }}>
+                            {list.adIds.map(id => (
+                              <div key={id} className="group/ad flex items-start gap-1.5" style={{ padding: "3px 0", borderBottom: "1px solid #f1f5f9" }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: adNameCache[id] ? "#0f172a" : "#94a3b8", lineHeight: 1.3, wordBreak: "break-word" }}>
+                                    {adNameCache[id] ?? (/^https?:\/\//i.test(id) ? "ลิงก์ Preview" : "ยังไม่ได้โหลดชื่อ")}
+                                  </div>
+                                  <div style={{ fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{id}</div>
+                                </div>
+                                <button onClick={() => setListAdIds(list.id, list.adIds.filter(x => x !== id))} title="เอาออกจาก List"
+                                  className="cursor-pointer flex-shrink-0" style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#cbd5e1")}>×</button>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+                            {addable.length > 0 && (
+                              <select value="" onChange={e => { if (e.target.value) setListAdIds(list.id, [...list.adIds, e.target.value]); }}
+                                style={{ fontSize: 10, border: "1px dashed #cbd5e1", borderRadius: 6, padding: "5px 6px", color: "#64748b", background: "#fff" }}>
+                                <option value="">+ เพิ่มจาก Ads ที่โหลดอยู่ ({addable.length})</option>
+                                {addable.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                              </select>
+                            )}
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <input value={addText} onChange={e => setListAddText(prev => ({ ...prev, [list.id]: e.target.value }))}
+                                placeholder="เพิ่ม Ad ID / ลิงก์ (หลายตัวคั่นด้วยบรรทัดหรือ ,)"
+                                style={{ flex: 1, minWidth: 0, fontSize: 10, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 6px" }} />
+                              <button disabled={!addText.trim()} className="cursor-pointer"
+                                onClick={() => {
+                                  const added = addText.split(/[\n,\s]+/).map(x => x.trim()).filter(Boolean);
+                                  setListAdIds(list.id, [...list.adIds, ...added]);
+                                  setListAddText(prev => ({ ...prev, [list.id]: "" }));
+                                }}
+                                style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: addText.trim() ? "#2563eb" : "#94a3b8", border: "none", borderRadius: 6, padding: "0 10px" }}>เพิ่ม</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      </div>
+                      );
+                    })}
                   </div>
                   {selectedListIds.size > 0 && (
                     <div className="flex flex-col gap-1.5 mt-2" style={{ padding: "8px", borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>

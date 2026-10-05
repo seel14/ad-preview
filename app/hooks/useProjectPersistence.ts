@@ -23,6 +23,7 @@ export interface Project {
   updatedAt: number;
   cachedAds?: unknown[];
   cachedTargets?: unknown[];
+  fbAccountId?: string;
 }
 
 // Owns the list of Projects, which one is active, and persisting changes to Redis

@@ -43,6 +43,7 @@ export interface Project {
   timeline?: TimelineEntry[];
   cachedAds?: unknown[];
   cachedTargets?: unknown[];
+  fbAccountId?: string;
   createdAt: number;
   updatedAt: number;
 }

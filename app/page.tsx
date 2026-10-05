@@ -385,6 +385,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId]);
 
+  // Each Project remembers its own ad account: switching Project (or connecting Facebook) re-selects it.
+  useEffect(() => {
+    const pinned = currentProject?.fbAccountId;
+    if (pinned && fbAdAccounts.some(a => a.id === pinned) && fbSelectedAccount !== pinned) setFbSelectedAccount(pinned);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId, fbConnected, fbAdAccounts]);
+
   // Keep the active platform tab pointed at a real node — fall back to the first
   // platform whenever the current selection disappears (project switch, deletion, etc.)
   useEffect(() => {
@@ -460,20 +467,29 @@ export default function Home() {
       });
     });
 
-    for (let i = 0; i < adIds.length; i++) {
-      onProgress?.(`กำลังโหลด ${i + 1}/${adIds.length}...`);
-      try {
-        const res = await fetch(`/api/ads?adId=${adIds[i]}&token=${encodeURIComponent(tok.trim())}`);
-        const data = await res.json();
-        if (data.error) {
-          results.push({ id: adIds[i], name: `❌ ${data.error}`, status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null });
-        } else {
-          results.push(data);
+    // Load several ads at once (order preserved) instead of one by one.
+    const loaded: AdData[] = new Array(adIds.length);
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < adIds.length) {
+        const i = next++;
+        try {
+          const res = await fetch(`/api/ads?adId=${adIds[i]}&token=${encodeURIComponent(tok.trim())}`);
+          const data = await res.json();
+          loaded[i] = data.error
+            ? { id: adIds[i], name: `❌ ${data.error}`, status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null }
+            : data;
+        } catch {
+          loaded[i] = { id: adIds[i], name: "❌ โหลดไม่ได้", status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null };
         }
-      } catch {
-        results.push({ id: adIds[i], name: "❌ โหลดไม่ได้", status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null });
+        done++;
+        onProgress?.(`กำลังโหลด ${done}/${adIds.length}...`);
       }
-    }
+    };
+    onProgress?.(`กำลังโหลด 0/${adIds.length}...`);
+    await Promise.all(Array.from({ length: Math.min(5, adIds.length) }, worker));
+    results.push(...loaded);
     return results;
   }
 
@@ -1642,7 +1658,7 @@ export default function Home() {
                   />
                   <select
                     value={fbSelectedAccount}
-                    onChange={e => setFbSelectedAccount(e.target.value)}
+                    onChange={e => { setFbSelectedAccount(e.target.value); if (currentProject) patchProject({ fbAccountId: e.target.value }); }}
                     style={{ marginTop: 6, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", color: "#0f172a", background: "#f8fafc", width: "100%" }}>
                     <option value="">เลือก Ad Account...</option>
                     {fbAdAccounts

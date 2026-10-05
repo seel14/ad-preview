@@ -313,8 +313,9 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
-  const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
-  const [listAddText, setListAddText] = useState<Record<string, string>>({});
+  const [listModalId, setListModalId] = useState<string | null>(null);
+  const [listAddText, setListAddText] = useState("");
+  const [listQuery, setListQuery] = useState("");
   const [adNameCache, setAdNameCache] = useState<Record<string, string>>({});
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -1496,15 +1497,12 @@ export default function Home() {
                   </div>
                   <div className="flex flex-col gap-1">
                     {savedLists.map(list => {
-                      const open = expandedLists.has(list.id);
-                      const toggleOpen = () => setExpandedLists(prev => { const n = new Set(prev); if (n.has(list.id)) n.delete(list.id); else n.add(list.id); return n; });
-                      const addText = listAddText[list.id] ?? "";
-                      const addable = ads.filter(a => !a.id.startsWith("link-") && a.status !== "ERROR" && !list.adIds.includes(a.id));
+                      const toggleOpen = () => setListModalId(list.id);
                       return (
                       <div key={list.id} style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.03)", overflow: "hidden" }}>
                       <div
                         className="group flex items-center gap-2 transition-colors duration-150"
-                        style={{ padding: "7px 9px", background: open ? "#f8fafc" : "#fff" }}>
+                        style={{ padding: "7px 9px", background: "#fff" }}>
                         <input type="checkbox" className="cursor-pointer flex-shrink-0"
                           checked={selectedListIds.has(list.id)}
                           onChange={e => {
@@ -1515,11 +1513,11 @@ export default function Home() {
                             });
                           }}
                         />
-                        <svg className="w-3 h-3 flex-shrink-0 transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }} fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                         </svg>
                         <span onClick={toggleOpen} className="flex-1 truncate cursor-pointer"
-                          title="คลิกเพื่อดู/แก้ไข Ads ใน List"
+                          title="คลิกเพื่อเปิดดู/แก้ไข Ads ใน List"
                           style={{ fontSize: 11, color: "#334155" }}>
                           {list.name}
                           <span style={{ color: "#94a3b8", marginLeft: 4 }}>({list.adIds.length})</span>
@@ -1535,51 +1533,6 @@ export default function Home() {
                           </svg>
                         </button>
                       </div>
-                      {open && (
-                        <div style={{ borderTop: "1px solid #e2e8f0", padding: "6px 9px 9px" }}>
-                          <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
-                            <button onClick={() => handleLoadList(list)} className="cursor-pointer" style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>ใส่ใน Ad IDs ด้านบน</button>
-                            <button onClick={() => handleRenameList(list)} className="cursor-pointer" style={{ fontSize: 10, color: "#64748b" }}>เปลี่ยนชื่อ</button>
-                          </div>
-                          {list.adIds.length === 0 && <div style={{ fontSize: 10, color: "#94a3b8", padding: "4px 0" }}>List นี้ยังไม่มี Ads</div>}
-                          <div style={{ maxHeight: 190, overflowY: "auto" }}>
-                            {list.adIds.map(id => (
-                              <div key={id} className="group/ad flex items-start gap-1.5" style={{ padding: "3px 0", borderBottom: "1px solid #f1f5f9" }}>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 600, color: adNameCache[id] ? "#0f172a" : "#94a3b8", lineHeight: 1.3, wordBreak: "break-word" }}>
-                                    {adNameCache[id] ?? (/^https?:\/\//i.test(id) ? "ลิงก์ Preview" : "ยังไม่ได้โหลดชื่อ")}
-                                  </div>
-                                  <div style={{ fontSize: 9, fontFamily: "var(--font-geist-mono), monospace", color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{id}</div>
-                                </div>
-                                <button onClick={() => setListAdIds(list.id, list.adIds.filter(x => x !== id))} title="เอาออกจาก List"
-                                  className="cursor-pointer flex-shrink-0" style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
-                                  onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#cbd5e1")}>×</button>
-                              </div>
-                            ))}
-                          </div>
-                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-                            {addable.length > 0 && (
-                              <select value="" onChange={e => { if (e.target.value) setListAdIds(list.id, [...list.adIds, e.target.value]); }}
-                                style={{ fontSize: 10, border: "1px dashed #cbd5e1", borderRadius: 6, padding: "5px 6px", color: "#64748b", background: "#fff" }}>
-                                <option value="">+ เพิ่มจาก Ads ที่โหลดอยู่ ({addable.length})</option>
-                                {addable.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                              </select>
-                            )}
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <input value={addText} onChange={e => setListAddText(prev => ({ ...prev, [list.id]: e.target.value }))}
-                                placeholder="เพิ่ม Ad ID / ลิงก์ (หลายตัวคั่นด้วยบรรทัดหรือ ,)"
-                                style={{ flex: 1, minWidth: 0, fontSize: 10, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 6px" }} />
-                              <button disabled={!addText.trim()} className="cursor-pointer"
-                                onClick={() => {
-                                  const added = addText.split(/[\n,\s]+/).map(x => x.trim()).filter(Boolean);
-                                  setListAdIds(list.id, [...list.adIds, ...added]);
-                                  setListAddText(prev => ({ ...prev, [list.id]: "" }));
-                                }}
-                                style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: addText.trim() ? "#2563eb" : "#94a3b8", border: "none", borderRadius: 6, padding: "0 10px" }}>เพิ่ม</button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                       </div>
                       );
                     })}
@@ -1866,6 +1819,84 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {listModalId && (() => {
+        const list = savedLists.find(l => l.id === listModalId);
+        if (!list) return null;
+        const q = listQuery.trim().toLowerCase();
+        const rows = list.adIds.filter(id => !q || id.toLowerCase().includes(q) || (adNameCache[id] ?? "").toLowerCase().includes(q));
+        const addable = ads.filter(a => !a.id.startsWith("link-") && a.status !== "ERROR" && !list.adIds.includes(a.id));
+        const close = () => { setListModalId(null); setListAddText(""); setListQuery(""); };
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={close}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: "94vw", maxHeight: "88vh", display: "flex", flexDirection: "column", background: "#fff", borderRadius: 14, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
+              <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", wordBreak: "break-word" }}>{list.name}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8" }}>{list.adIds.length} Ads</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button onClick={() => handleRenameList(list)} className="cursor-pointer" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b" }}>เปลี่ยนชื่อ</button>
+                  <button onClick={() => { handleLoadList(list); close(); }} className="cursor-pointer" style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1e40af" }}>ใส่ใน Ad IDs</button>
+                  <button onClick={close} aria-label="ปิด" className="cursor-pointer" style={{ fontSize: 16, lineHeight: 1, padding: "3px 9px", borderRadius: 8, border: "none", background: "#f1f5f9", color: "#64748b" }}>✕</button>
+                </div>
+              </div>
+
+              <div style={{ padding: "10px 20px 0" }}>
+                <input value={listQuery} onChange={e => setListQuery(e.target.value)} placeholder="ค้นหาชื่อ Ad หรือ ID ใน List นี้"
+                  style={{ width: "100%", fontSize: 12, padding: "7px 10px", border: "1px solid #e2e8f0", borderRadius: 8 }} />
+              </div>
+
+              <div style={{ flex: 1, minHeight: 120, overflowY: "auto", padding: "8px 20px" }}>
+                {rows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 28 }}>{list.adIds.length ? "ไม่พบ Ad ที่ตรงกับการค้นหา" : "List นี้ยังไม่มี Ads"}</div>}
+                {rows.map(id => {
+                  const full = ads.find(a => a.id === id);
+                  const thumb = full ? normalizeCreative(full.creative).image : "";
+                  return (
+                    <div key={id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #f8fafc" }}>
+                      {thumb
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={thumb} alt="" referrerPolicy="no-referrer" style={{ width: 38, height: 38, borderRadius: 6, objectFit: "cover", flexShrink: 0, background: "#f1f5f9" }} />
+                        : <div style={{ width: 38, height: 38, borderRadius: 6, background: "#f1f5f9", flexShrink: 0 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: adNameCache[id] ? "#0f172a" : "#94a3b8", wordBreak: "break-word" }}>
+                          {adNameCache[id] ?? (/^https?:\/\//i.test(id) ? "ลิงก์ Preview" : "ยังไม่ได้โหลดชื่อ")}
+                        </div>
+                        <div style={{ fontSize: 10, fontFamily: "var(--font-geist-mono), monospace", color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{id}</div>
+                      </div>
+                      <button onClick={() => setListAdIds(list.id, list.adIds.filter(x => x !== id))} className="cursor-pointer"
+                        style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 9px" }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "#dc2626"; e.currentTarget.style.borderColor = "#fecaca"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "#e2e8f0"; }}>เอาออก</button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ padding: "12px 20px 16px", borderTop: "1px solid #f1f5f9", background: "#f8fafc", borderRadius: "0 0 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.6, textTransform: "uppercase" }}>เพิ่ม Ads เข้า List</div>
+                {addable.length > 0 && (
+                  <select value="" onChange={e => { if (e.target.value) setListAdIds(list.id, [...list.adIds, e.target.value]); }}
+                    style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 10px", color: "#475569", background: "#fff" }}>
+                    <option value="">เลือกจาก Ads ที่โหลดอยู่ ({addable.length})</option>
+                    {addable.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={listAddText} onChange={e => setListAddText(e.target.value)} placeholder="หรือวาง Ad ID / ลิงก์ (หลายตัวคั่นด้วยบรรทัด คอมมา หรือเว้นวรรค)"
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 10px" }} />
+                  <button disabled={!listAddText.trim()} className="cursor-pointer font-semibold"
+                    onClick={() => {
+                      const added = listAddText.split(/[\n,\s]+/).map(x => x.trim()).filter(Boolean);
+                      setListAdIds(list.id, [...list.adIds, ...added]);
+                      setListAddText("");
+                    }}
+                    style={{ fontSize: 12, color: "#fff", background: listAddText.trim() ? "#2563eb" : "#94a3b8", border: "none", borderRadius: 8, padding: "0 18px" }}>เพิ่ม</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {dlgOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setDlgOpen(false)}>

@@ -117,12 +117,43 @@ function LocationMap({ points, width, height }: { points: GeoPoint[]; width: num
           return (
             <g key={i}>
               {rpx > 0 && <circle cx={cx} cy={cy} r={rpx} fill={color} fillOpacity={0.18} stroke={color} strokeWidth={2} />}
-              <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />
+              {points.length <= 30 ? (
+                <>
+                  <circle cx={cx} cy={cy} r={8} fill={color} stroke="#fff" strokeWidth={1.5} />
+                  <text x={cx} y={cy + 3.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#fff" fontFamily="Helvetica, Arial, sans-serif">{i + 1}</text>
+                </>
+              ) : <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />}
             </g>
           );
         })}
       </svg>
       <div style={{ position: "absolute", right: 3, bottom: 2, fontSize: 8, color: "#334155", background: "rgba(255,255,255,0.75)", padding: "0 3px", borderRadius: 3 }}>© OpenStreetMap contributors</div>
+    </div>
+  );
+}
+
+// Every location name (the primary information); a number links it to its pin on the map when one was found.
+function LocationNames({ names, points, offset, tone }: { names: string[]; points: GeoPoint[]; offset: number; tone: "blue" | "red" }) {
+  const used = new Set<number>();
+  const clean = (n: string) => n.replace(/^[A-Za-z ]+: /, "").replace(/ \([^)]*\)$/, "").trim().toLowerCase();
+  const rows = names.map(name => {
+    const key = clean(name);
+    let pin = -1;
+    points.forEach((p, i) => { if (pin < 0 && !used.has(i) && p.label.trim().toLowerCase() === key) pin = i; });
+    if (pin >= 0) used.add(pin);
+    return { name: name.replace(/^[A-Za-z ]+: /, ""), pin };
+  });
+  const color = tone === "red" ? "#dc2626" : "#2563eb";
+  return (
+    <div style={{ columnCount: rows.length > 10 ? 2 : 1, columnGap: 14 }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "#0f172a", fontWeight: 600, padding: "2px 0", breakInside: "avoid" }}>
+          {r.pin >= 0
+            ? <span style={{ background: color, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 9999, minWidth: 16, height: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{offset + r.pin + 1}</span>
+            : <span style={{ color: "#cbd5e1", fontSize: 12, width: 16, textAlign: "center", flexShrink: 0 }}>•</span>}
+          <span style={{ wordBreak: "break-word" }}>{r.name}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -146,22 +177,27 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
       <div style={{ flex: 1, minHeight: 0, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
           <Section title="Locations" grow>
-            {item.locations.length ? <Chips items={item.locations} /> : item.locationTypes.length ? <span style={{ fontSize: 12, color: "#94a3b8" }}>Facebook ไม่ได้ส่งรายชื่อพื้นที่มา (ตรวจใน Ads Manager)</span> : <Empty />}
-            {item.locationTypes.length > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{item.locationTypes.join(" · ")}</div>}
-            <LocationMap points={item.geoPoints ?? []} width={264} height={150} />
-            {(item.geoPoints ?? []).length > 0 && (
-              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-                {item.geoPoints.map((p, i) => (
-                  <span key={i}><b style={{ color: p.excluded ? "#dc2626" : "#2563eb" }}>●</b> {p.label}{p.radiusKm ? ` · รัศมี ${Number(p.radiusKm.toFixed(1))} กม.` : ""}</span>
-                ))}
-              </div>
-            )}
-            {item.excludedLocations.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#b91c1c", marginBottom: 2 }}>ยกเว้นพื้นที่</div>
-                <Chips items={item.excludedLocations} tone="red" />
-              </div>
-            )}
+            {(() => {
+              const pts = item.geoPoints ?? [];
+              const included = pts.filter(p => !p.excluded);
+              const excludedPts = pts.filter(p => p.excluded);
+              return (
+                <>
+                  {item.locations.length
+                    ? <LocationNames names={item.locations} points={included} offset={0} tone="blue" />
+                    : item.locationTypes.length ? <span style={{ fontSize: 12, color: "#94a3b8" }}>Facebook ไม่ได้ส่งรายชื่อพื้นที่มา (ตรวจใน Ads Manager)</span> : <Empty />}
+                  {item.locationTypes.length > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{item.locationTypes.join(" · ")}</div>}
+                  {item.excludedLocations.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#b91c1c", marginBottom: 2 }}>ยกเว้นพื้นที่</div>
+                      <LocationNames names={item.excludedLocations} points={excludedPts} offset={included.length} tone="red" />
+                    </div>
+                  )}
+                  <LocationMap points={[...included, ...excludedPts]} width={264} height={150} />
+                  {pts.length > 0 && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 3 }}>แผนที่ใช้ประกอบการดูเท่านั้น ตำแหน่งอาจคลาดเคลื่อนเล็กน้อย</div>}
+                </>
+              );
+            })()}
           </Section>
           <Section title="Age & Gender">
             <Row k="อายุ" v={item.age} />

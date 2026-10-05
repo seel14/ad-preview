@@ -131,7 +131,7 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
   const st = STATUS_COLOR[item.status] ?? { bg: "#e2e8f0", fg: "#475569" };
   const names = item.adIds.map(id => adNames[id]).filter(Boolean);
   return (
-    <div id="export-target-slide" style={{ width: SLIDE_W, height: SLIDE_H, background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", overflow: "hidden", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+    <div id="export-target-slide" style={{ width: SLIDE_W, minWidth: SLIDE_W, height: SLIDE_H, minHeight: SLIDE_H, flexShrink: 0, boxSizing: "border-box", background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", overflow: "hidden", border: "1px solid #e5e7eb", borderRadius: 8 }}>
       <div style={{ padding: "22px 28px 14px", background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#2563eb", textTransform: "uppercase" }}>Ad Set Targeting</div>
@@ -355,7 +355,7 @@ export default function TargetView({ targets, adNames, index, onIndexChange, loa
       )}
       {error && <div style={{ maxWidth: SLIDE_W, margin: "0 auto 12px", fontSize: 12, color: "#991b1b", background: "#fee2e2", borderRadius: 8, padding: "8px 12px" }}>{error}</div>}
       {item ? (
-        <div style={{ display: "flex", justifyContent: "center" }}>
+        <div style={{ width: SLIDE_W, margin: "0 auto", flexShrink: 0 }}>
           <TargetSlide item={item} adNames={adNames} />
         </div>
       ) : !loading && !error && (

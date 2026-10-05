@@ -27,6 +27,7 @@ export interface TimelineEntry {
   date: string; // "YYYY-MM-DD"
   channel?: string; // e.g. "Facebook", "Google", "TikTok"
   campaign?: string;
+  images?: { src: string; name?: string; adId?: string }[];
   title: string;
   description?: string;
   details?: Record<string, string>;

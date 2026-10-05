@@ -8,6 +8,7 @@ import AdsStructure, { type StructureNode } from "./components/AdsStructure";
 import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
+import { normalizeCreative } from "@/lib/normalizeCreative";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
@@ -1657,6 +1658,7 @@ export default function Home() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {currentProject ? (
               <Timeline entries={timeline} onChange={handleTimelineChange} projectName={currentProject?.name}
+                adOptions={ads.filter(a => a.status !== "ERROR" && !a.id.startsWith("link-")).map(a => ({ id: a.id, name: a.name, image: normalizeCreative(a.creative).image }))}
                 campaigns={structureNodes.flatMap(pl => pl.children.filter(c => c.type === "campaign").map(c => ({ id: c.id, name: c.name, platform: pl.name })))} />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>

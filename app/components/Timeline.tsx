@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+export interface TimelineImage { src: string; name?: string; adId?: string }
+
 export interface TimelineEntry {
   id: string;
   date: string; // "YYYY-MM-DD"
@@ -9,6 +11,7 @@ export interface TimelineEntry {
   title: string;
   description?: string;
   campaign?: string; // campaign name picked from Ads Structure
+  images?: TimelineImage[]; // ad creatives shown on the card (Facebook / TikTok)
   details?: Record<string, string>; // channel-specific fields, e.g. { Objective: "...", Target: "..." }
   createdAt: number;
 }
@@ -93,6 +96,41 @@ function DetailsList({ details, campaign, channel, align = "left" }: { details?:
   );
 }
 
+const IMAGE_CHANNELS = ["Facebook", "TikTok"];
+
+// Shrinks an image (file or remote URL, fetched through the same-origin proxy) to a small JPEG data URL so it
+// can be stored with the event and never expires like Facebook CDN links do.
+async function toThumbDataUrl(source: File | string, maxSide = 360): Promise<string> {
+  const blob = typeof source === "string"
+    ? await (await fetch(`/api/proxy?url=${encodeURIComponent(source)}`)).blob()
+    : source;
+  const bitmap = await createImageBitmap(blob);
+  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+function ImageStrip({ images, align }: { images?: TimelineImage[]; align: "left" | "center" }) {
+  if (!images?.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, justifyContent: align === "center" ? "center" : "flex-start" }}>
+      {images.map((im, i) => (
+        <div key={i} style={{ width: 76 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={im.src} alt={im.name ?? ""} style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block", background: "#f1f5f9" }} />
+          {im.name && <div style={{ fontSize: 9, color: "#64748b", marginTop: 2, lineHeight: 1.25, textAlign: "center", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-all" }}>{im.name}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function groupByChannel(entries: TimelineEntry[]): { channel: string; entries: TimelineEntry[] }[] {
   const groups: { channel: string; entries: TimelineEntry[] }[] = [];
   for (const entry of entries) {
@@ -132,6 +170,7 @@ function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: 
               <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
             )}
             <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align={align} />
+            <ImageStrip images={entry.images} align={align} />
             <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
               <button onClick={() => onEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
@@ -186,15 +225,17 @@ function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Timeline({ entries, onChange, projectName, campaigns = [] }: {
+export default function Timeline({ entries, onChange, projectName, campaigns = [], adOptions = [] }: {
   entries: TimelineEntry[]; onChange: (entries: TimelineEntry[]) => void; projectName?: string;
   campaigns?: { id: string; name: string; platform: string }[];
+  adOptions?: { id: string; name: string; image: string }[];
 }) {
   const [adding, setAdding] = useState(false);
   const [otherOpen, setOtherOpen] = useState(false);
+  const [imgBusy, setImgBusy] = useState(false);
   const [campaignOther, setCampaignOther] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string> });
+  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string>, images: [] as TimelineImage[] });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
   const [filterFrom, setFilterFrom] = useState(() => {
     const now = new Date();
@@ -223,7 +264,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   }
 
   function startAdd() {
-    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {} });
+    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {}, images: [] });
     setEditingId(null);
     setOtherOpen(false);
     setCampaignOther(false);
@@ -231,7 +272,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   }
 
   function startEdit(entry: TimelineEntry) {
-    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {} });
+    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: entry.details ?? {}, images: entry.images ?? [] });
     setEditingId(entry.id);
     setOtherOpen(false);
     setCampaignOther(false);
@@ -243,7 +284,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setEditingId(null);
   }
 
-  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()));
+  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()) || form.images.length > 0);
 
   function saveForm() {
     if (!canSave) return;
@@ -255,15 +296,16 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
       if (v) details[field] = v;
     }
     const detailsOrUndefined = Object.keys(details).length ? details : undefined;
+    const imagesOrUndefined = IMAGE_CHANNELS.includes(form.channel.trim()) && form.images.length ? form.images : undefined;
 
     if (editingId) {
       onChange(entries.map(e => e.id === editingId
-        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined }
+        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined }
         : e));
     } else {
       onChange([...entries, {
         id: uid(), date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(),
-        description: form.description.trim() || undefined, details: detailsOrUndefined, createdAt: Date.now(),
+        description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, createdAt: Date.now(),
       }]);
     }
     cancelForm();
@@ -414,6 +456,69 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 </div>
               );
             })()}
+            {IMAGE_CHANNELS.includes(form.channel.trim()) && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>รูป Ads ({form.images.length})</div>
+                {form.images.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {form.images.map((im, i) => (
+                      <div key={i} style={{ position: "relative", width: 64 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={im.src} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} />
+                        <button onClick={() => setForm(f => ({ ...f, images: f.images.filter((_, j) => j !== i) }))}
+                          style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {adOptions.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>เลือกจาก Ads ที่โหลดไว้</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 6, maxHeight: 170, overflowY: "auto" }}>
+                      {adOptions.map(ad => {
+                        const picked = form.images.some(im => im.adId === ad.id);
+                        return (
+                          <button key={ad.id} type="button" disabled={!ad.image || imgBusy}
+                            title={ad.name}
+                            onClick={async () => {
+                              if (picked) { setForm(f => ({ ...f, images: f.images.filter(im => im.adId !== ad.id) })); return; }
+                              setImgBusy(true);
+                              try {
+                                const src = await toThumbDataUrl(ad.image);
+                                setForm(f => ({ ...f, images: [...f.images, { src, name: ad.name, adId: ad.id }] }));
+                              } catch { alert("โหลดรูปนี้ไม่สำเร็จ ลองอัปโหลดรูปเองแทน"); }
+                              finally { setImgBusy(false); }
+                            }}
+                            style={{ padding: 0, border: picked ? "2px solid #2563eb" : "2px solid transparent", borderRadius: 8, background: "none", cursor: ad.image ? "pointer" : "default", opacity: ad.image ? 1 : 0.4, textAlign: "left" }}>
+                            {ad.image
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={ad.image} alt="" referrerPolicy="no-referrer" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 6, display: "block" }} />
+                              : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#e2e8f0", borderRadius: 6 }} />}
+                            <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.2, padding: "2px 2px 0", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-all" }}>{ad.name}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <label className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb", fontWeight: 600 }}>
+                  {imgBusy ? "กำลังประมวลผลรูป..." : "+ อัปโหลดรูปเอง"}
+                  <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={imgBusy}
+                    onChange={async e => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = "";
+                      if (!files.length) return;
+                      setImgBusy(true);
+                      try {
+                        const added: TimelineImage[] = [];
+                        for (const f of files) added.push({ src: await toThumbDataUrl(f), name: f.name.replace(/\.[^.]+$/, "") });
+                        setForm(fm => ({ ...fm, images: [...fm.images, ...added] }));
+                      } catch { alert("อ่านไฟล์รูปไม่สำเร็จ"); }
+                      finally { setImgBusy(false); }
+                    }} />
+                </label>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={cancelForm} style={{ fontSize: 12, color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}>ยกเลิก</button>
               <button onClick={saveForm} disabled={!canSave}

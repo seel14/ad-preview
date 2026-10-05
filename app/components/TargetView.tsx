@@ -228,22 +228,10 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-          <Section title="Delivery">
-            <Row k="Optimization" v={item.optimizationGoal} />
-            <Row k="Budget" v={item.budget} />
-            <Row k="Bid" v={item.bidStrategy} />
-            <Row k="ช่วงเวลา" v={item.schedule} />
-          </Section>
-          <Section title="Placements">
+          <Section title="Placements" grow>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {item.placements.map((p, i) => <div key={i} style={{ fontSize: 11, color: "#0f172a" }}>{p}</div>)}
               {item.devices.length > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>อุปกรณ์: {item.devices.join(", ")}</div>}
-            </div>
-          </Section>
-          <Section title={`Ads (${item.adIds.length})`} grow>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {(names.length ? names : item.adIds).slice(0, 8).map((n, i) => <div key={i} style={{ fontSize: 11, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>• {n}</div>)}
-              {item.adIds.length > 8 && <div style={{ fontSize: 11, color: "#94a3b8" }}>+{item.adIds.length - 8} more</div>}
             </div>
           </Section>
         </div>

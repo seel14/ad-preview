@@ -8,7 +8,7 @@ import AdsStructure, { type StructureNode } from "./components/AdsStructure";
 import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
-import TargetView, { type AdsetTarget } from "./components/TargetView";
+import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
 interface AdData {
@@ -378,6 +378,8 @@ export default function Home() {
     setTargets((currentProject?.cachedTargets as AdsetTarget[] | undefined) ?? []);
     setTargetIndex(0);
     setTargetError("");
+    setAdsetOptions([]);
+    setAdsetSel(new Set());
     setCurrentIndex(0);
     setStatusMsg("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -862,15 +864,47 @@ export default function Home() {
   const targetAdIds = ads.map(a => a.id).filter(id => /^\d+$/.test(id));
   const adNameById: Record<string, string> = Object.fromEntries(ads.map(a => [a.id, a.name]));
 
+  const [adsetOptions, setAdsetOptions] = useState<AdsetOption[]>([]);
+  const [adsetSel, setAdsetSel] = useState<Set<string>>(new Set());
+  const [adsetListLoading, setAdsetListLoading] = useState(false);
+  const [pickerSource, setPickerSource] = useState<"loaded" | "account">("loaded");
+  const fbAccountLabel = fbConnected && fbSelectedAccount
+    ? (fbAdAccounts.find(a => a.id === fbSelectedAccount || a.account_id === fbSelectedAccount.replace("act_", ""))?.name ?? fbSelectedAccount)
+    : "";
+
+  async function loadAdsetList() {
+    setAdsetListLoading(true);
+    setTargetError("");
+    try {
+      const body = pickerSource === "account"
+        ? { source: "account", accountId: fbSelectedAccount }
+        : { source: "loaded", token: token.trim(), adIds: targetAdIds };
+      const r = await fetch("/api/targets/list", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error ?? "โหลดรายการ Ad Set ไม่สำเร็จ");
+      setAdsetOptions(data);
+      setAdsetSel(pickerSource === "loaded" ? new Set((data as AdsetOption[]).map(o => o.id)) : new Set());
+    } catch (e) {
+      setTargetError(e instanceof Error ? e.message : "โหลดรายการ Ad Set ไม่สำเร็จ");
+    } finally {
+      setAdsetListLoading(false);
+    }
+  }
+
   async function fetchTargets() {
-    if (!token.trim() || targetAdIds.length === 0) return;
+    const chosen = adsetOptions.filter(o => adsetSel.has(o.id));
+    if (!chosen.length) return;
     setTargetLoading(true);
     setTargetError("");
     try {
       const r = await fetch("/api/targets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim(), adIds: targetAdIds }),
+        body: JSON.stringify({
+          adsetIds: chosen.map(o => o.id),
+          adIdsByAdset: Object.fromEntries(chosen.map(o => [o.id, o.adIds])),
+          ...(pickerSource === "account" ? { useStored: true } : { token: token.trim() }),
+        }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error ?? "ดึง Target ไม่สำเร็จ");
@@ -1553,7 +1587,12 @@ export default function Home() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {currentProject ? (
               <TargetView targets={targets} adNames={adNameById} index={targetIndex} onIndexChange={setTargetIndex}
-                loading={targetLoading} error={targetError} onFetch={fetchTargets} canFetch={!!token.trim() && targetAdIds.length > 0}
+                loading={targetLoading} error={targetError}
+                picker={{
+                  source: pickerSource, onSourceChange: setPickerSource, loadedCount: targetAdIds.length, accountLabel: fbAccountLabel,
+                  canLoadLoaded: !!token.trim() && targetAdIds.length > 0, options: adsetOptions, selected: adsetSel, onSelectedChange: setAdsetSel,
+                  onLoadList: loadAdsetList, listLoading: adsetListLoading, onFetch: fetchTargets, fetching: targetLoading,
+                }}
                 onExportPdf={handleExportTargetPDF} exporting={targetExporting} exportMode={exportMode} />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>

@@ -1,8 +1,9 @@
 "use client";
 
-import type { AdsetTarget, GeoPoint, TargetGroup } from "@/lib/targets";
+import { useState } from "react";
+import type { AdsetOption, AdsetTarget, GeoPoint, TargetGroup } from "@/lib/targets";
 
-export type { AdsetTarget };
+export type { AdsetTarget, AdsetOption };
 
 const SLIDE_W = 960;
 const SLIDE_H = Math.round(SLIDE_W * (210 / 297));
@@ -215,19 +216,124 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
   );
 }
 
-export default function TargetView({ targets, adNames, index, onIndexChange, loading, error, onFetch, canFetch, onExportPdf, exporting, exportMode }: {
+export interface PickerProps {
+  source: "loaded" | "account";
+  onSourceChange: (s: "loaded" | "account") => void;
+  loadedCount: number;
+  accountLabel: string; // "" when no Facebook account is selected
+  canLoadLoaded: boolean;
+  options: AdsetOption[];
+  selected: Set<string>;
+  onSelectedChange: (s: Set<string>) => void;
+  onLoadList: () => void;
+  listLoading: boolean;
+  onFetch: () => void;
+  fetching: boolean;
+}
+
+function AdsetPicker({ p, startOpen }: { p: PickerProps; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const q = query.trim().toLowerCase();
+  const visible = p.options.filter(o =>
+    (!status || o.status === status) &&
+    (!q || o.name.toLowerCase().includes(q) || o.campaignName.toLowerCase().includes(q) || o.id.includes(q)));
+  const statuses = [...new Set(p.options.map(o => o.status).filter(Boolean))];
+  const allVisibleOn = visible.length > 0 && visible.every(o => p.selected.has(o.id));
+  const toggle = (id: string) => { const n = new Set(p.selected); if (n.has(id)) n.delete(id); else n.add(id); p.onSelectedChange(n); };
+  const canLoad = p.source === "account" ? !!p.accountLabel : p.canLoadLoaded;
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, maxWidth: SLIDE_W, margin: "0 auto 14px", overflow: "hidden" }}>
+      <button onClick={() => setOpen(o => !o)} className="cursor-pointer"
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "none", border: "none", textAlign: "left" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
+          เลือก Ad Set ที่ต้องการดึง Target
+          {p.selected.size > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#1e40af", background: "#dbeafe", borderRadius: 9999, padding: "1px 9px" }}>เลือกแล้ว {p.selected.size}</span>}
+        </span>
+        <span style={{ color: "#94a3b8", fontSize: 12 }}>{open ? "ซ่อน ▲" : "แสดง ▼"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {([["loaded", `Ads ที่โหลดไว้ (${p.loadedCount})`, p.canLoadLoaded], ["account", p.accountLabel ? `ทั้งบัญชี: ${p.accountLabel}` : "ทั้งบัญชี Facebook (ยังไม่ได้เลือกบัญชี)", !!p.accountLabel]] as const).map(([k, label, ok]) => (
+              <button key={k} onClick={() => p.onSourceChange(k)} className="cursor-pointer"
+                style={{ fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 8, border: p.source === k ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: p.source === k ? "#eff6ff" : "#fff", color: p.source === k ? "#1e40af" : ok ? "#64748b" : "#cbd5e1" }}>
+                {label}
+              </button>
+            ))}
+            <button onClick={p.onLoadList} disabled={!canLoad || p.listLoading} className="cursor-pointer"
+              style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 8, border: "none", color: "#fff", background: !canLoad || p.listLoading ? "#94a3b8" : "#2563eb" }}>
+              {p.listLoading ? "กำลังโหลดรายการ..." : p.options.length ? "โหลดรายการใหม่" : "โหลดรายการ Ad Set"}
+            </button>
+          </div>
+          {!canLoad && (
+            <div style={{ fontSize: 11, color: "#b45309" }}>
+              {p.source === "account" ? "เชื่อมต่อ Facebook แล้วเลือกบัญชีโฆษณาที่แผงด้านขวา" : "ต้องมี Token และโหลด Ads (Ad ID) ที่แท็บ Ad Preview ก่อน"}
+            </div>
+          )}
+
+          {p.options.length > 0 && (
+            <>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="ค้นหาชื่อ Ad Set / Campaign / ID"
+                  style={{ flex: 1, minWidth: 200, fontSize: 12, padding: "7px 10px", border: "1px solid #e2e8f0", borderRadius: 8 }} />
+                {statuses.length > 1 && (
+                  <select value={status} onChange={e => setStatus(e.target.value)} style={{ fontSize: 12, padding: "7px 8px", border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff" }}>
+                    <option value="">ทุกสถานะ</option>
+                    {statuses.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                )}
+                <button onClick={() => { const n = new Set(p.selected); visible.forEach(o => allVisibleOn ? n.delete(o.id) : n.add(o.id)); p.onSelectedChange(n); }}
+                  className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb", background: "none", border: "none" }}>
+                  {allVisibleOn ? "ยกเลิกที่เห็น" : `เลือกทั้งหมดที่เห็น (${visible.length})`}
+                </button>
+                {p.selected.size > 0 && (
+                  <button onClick={() => p.onSelectedChange(new Set())} className="cursor-pointer" style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none" }}>ล้างการเลือก</button>
+                )}
+              </div>
+              <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #f1f5f9", borderRadius: 8 }}>
+                {visible.length === 0 ? (
+                  <div style={{ padding: 16, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>ไม่พบ Ad Set ที่ตรงกับการค้นหา</div>
+                ) : visible.map(o => {
+                  const st = STATUS_COLOR[o.status] ?? { bg: "#e2e8f0", fg: "#475569" };
+                  return (
+                    <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", borderBottom: "1px solid #f8fafc", cursor: "pointer", background: p.selected.has(o.id) ? "#f0f7ff" : "#fff" }}>
+                      <input type="checkbox" checked={p.selected.has(o.id)} onChange={() => toggle(o.id)} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
+                        <span style={{ display: "block", fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.campaignName}{o.adIds.length ? ` · ${o.adIds.length} ads` : ""}</span>
+                      </span>
+                      {o.status && <span style={{ background: st.bg, color: st.fg, fontSize: 9, fontWeight: 800, padding: "1px 8px", borderRadius: 9999 }}>{o.status}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={p.onFetch} disabled={p.selected.size === 0 || p.fetching} className="cursor-pointer"
+                  style={{ fontSize: 12, fontWeight: 700, padding: "8px 18px", borderRadius: 8, border: "none", color: "#fff", background: p.selected.size === 0 || p.fetching ? "#94a3b8" : "#16a34a" }}>
+                  {p.fetching ? "กำลังดึง Target..." : `ดึง Target ที่เลือก (${p.selected.size})`}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function TargetView({ targets, adNames, index, onIndexChange, loading, error, picker, onExportPdf, exporting, exportMode }: {
   targets: AdsetTarget[]; adNames: Record<string, string>; index: number; onIndexChange: (i: number) => void;
-  loading: boolean; error: string; onFetch: () => void; canFetch: boolean; onExportPdf: () => void; exporting: boolean; exportMode: boolean;
+  loading: boolean; error: string; picker: PickerProps; onExportPdf: () => void; exporting: boolean; exportMode: boolean;
 }) {
   const item = targets[index];
   return (
     <div className="flex-1 overflow-auto" style={{ padding: 24, background: "#f1f5f9" }}>
-      {!exportMode && (
+      {!exportMode && <AdsetPicker p={picker} startOpen={targets.length === 0} />}
+      {!exportMode && targets.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", maxWidth: SLIDE_W, margin: "0 auto 14px" }}>
-          <button onClick={onFetch} disabled={!canFetch || loading} className="cursor-pointer"
-            style={{ fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", color: "#fff", background: !canFetch || loading ? "#94a3b8" : "#2563eb" }}>
-            {loading ? "กำลังดึง Target..." : targets.length ? "รีเฟรช Target" : "ดึง Target จาก Facebook"}
-          </button>
           {targets.length > 0 && (
             <>
               <button onClick={() => onIndexChange(Math.max(0, index - 1))} disabled={index === 0} className="cursor-pointer"
@@ -245,7 +351,6 @@ export default function TargetView({ targets, adNames, index, onIndexChange, loa
               </button>
             </>
           )}
-          {!canFetch && <span style={{ fontSize: 11, color: "#b45309" }}>ต้องมี Token และโหลด Ads (Ad ID) ที่แท็บ Ad Preview ก่อน</span>}
         </div>
       )}
       {error && <div style={{ maxWidth: SLIDE_W, margin: "0 auto 12px", fontSize: 12, color: "#991b1b", background: "#fee2e2", borderRadius: 8, padding: "8px 12px" }}>{error}</div>}
@@ -255,7 +360,7 @@ export default function TargetView({ targets, adNames, index, onIndexChange, loa
         </div>
       ) : !loading && !error && (
         <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 60 }}>
-          ยังไม่มีข้อมูล Target — กด "ดึง Target จาก Facebook" เพื่อดึงการตั้งค่า Target ของแต่ละ Ad Set จาก Ads ที่โหลดไว้
+          ยังไม่มีข้อมูล Target — โหลดรายการ Ad Set ด้านบน ติ๊กเลือกที่ต้องการ แล้วกด "ดึง Target ที่เลือก"
         </div>
       )}
     </div>

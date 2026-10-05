@@ -1,4 +1,5 @@
 import { FacebookApiError } from "@/lib/facebook";
+import { fetchAllPages } from "@/lib/graphPaging";
 
 const BASE = "https://graph.facebook.com/v21.0";
 
@@ -166,22 +167,52 @@ function formatMoney(minor: string | undefined, currency: string): string {
 
 const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "";
 
-// Reads the targeting of every Ad Set that the given ads belong to (one result per Ad Set).
-export async function getAdsetTargets(adIds: string[], token: string): Promise<AdsetTarget[]> {
-  const ids = [...new Set(adIds.filter(Boolean))];
-  if (!ids.length) return [];
-  geocodeBudget = 12;
+export interface AdsetOption { id: string; name: string; status: string; campaignName: string; adIds: string[] }
 
-  const adToAdset = new Map<string, string>();
-  const accountIds = new Set<string>();
+// Ad Sets that the given ads belong to (one row per Ad Set), without loading targeting yet.
+export async function listAdsetsForAds(adIds: string[], token: string): Promise<AdsetOption[]> {
+  const ids = [...new Set(adIds.filter(Boolean))];
+  const adsByAdset = new Map<string, string[]>();
   for (const part of chunk(ids, 40)) {
-    const data = await graph(`${BASE}/?ids=${part.join(",")}&fields=adset_id,account_id&access_token=${token}`);
+    const data = await graph(`${BASE}/?ids=${part.join(",")}&fields=adset_id&access_token=${token}`);
     for (const [adId, v] of Object.entries<Json>(data)) {
-      if (v?.adset_id) adToAdset.set(adId, v.adset_id);
-      if (v?.account_id) accountIds.add(`act_${v.account_id}`);
+      if (v?.adset_id) adsByAdset.set(v.adset_id, [...(adsByAdset.get(v.adset_id) ?? []), adId]);
     }
   }
+  const out: AdsetOption[] = [];
+  for (const part of chunk([...adsByAdset.keys()], 40)) {
+    const data = await graph(`${BASE}/?ids=${part.join(",")}&fields=${encodeURIComponent("id,name,effective_status,campaign{name}")}&access_token=${token}`);
+    for (const id of part) {
+      const a: Json = data[id];
+      if (a) out.push({ id: a.id, name: a.name ?? "", status: a.effective_status ?? "", campaignName: a.campaign?.name ?? "", adIds: adsByAdset.get(id) ?? [] });
+    }
+  }
+  return out;
+}
 
+// Every Ad Set in an ad account.
+export async function listAdsetsForAccount(accountId: string, token: string): Promise<AdsetOption[]> {
+  const acct = accountId.startsWith("act_") ? accountId : `act_${accountId}`;
+  try {
+    const rows = await fetchAllPages<Json>(`${BASE}/${acct}/adsets?fields=${encodeURIComponent("id,name,effective_status,campaign{name}")}&limit=200&access_token=${token}`);
+    return rows.map(a => ({ id: a.id, name: a.name ?? "", status: a.effective_status ?? "", campaignName: a.campaign?.name ?? "", adIds: [] }));
+  } catch (e) {
+    throw new FacebookApiError(e instanceof Error ? e.message : "graph_api_error");
+  }
+}
+
+// Reads the targeting of the chosen Ad Sets. `adIdsByAdset` (optional) lists which loaded ads belong to each.
+export async function getAdsetTargets(adsetIds: string[], token: string, adIdsByAdset: Record<string, string[]> = {}): Promise<AdsetTarget[]> {
+  const adsetIdList = [...new Set(adsetIds.filter(Boolean))];
+  if (!adsetIdList.length) return [];
+  geocodeBudget = 12;
+  const adsByAdset = new Map<string, string[]>(Object.entries(adIdsByAdset));
+
+  const accountIds = new Set<string>();
+  for (const part of chunk(adsetIdList, 40)) {
+    const data = await graph(`${BASE}/?ids=${part.join(",")}&fields=account_id&access_token=${token}`);
+    for (const v of Object.values<Json>(data)) if (v?.account_id) accountIds.add(`act_${v.account_id}`);
+  }
   const currencies = new Map<string, string>();
   if (accountIds.size) {
     try {
@@ -190,17 +221,14 @@ export async function getAdsetTargets(adIds: string[], token: string): Promise<A
     } catch { /* currency is only cosmetic */ }
   }
   const currency = [...currencies.values()][0] || "THB";
-
-  const adsetIds = [...new Set(adToAdset.values())];
-  const adsByAdset = new Map<string, string[]>();
-  for (const [adId, adsetId] of adToAdset) adsByAdset.set(adsetId, [...(adsByAdset.get(adsetId) ?? []), adId]);
+  const adsetIdsAll = adsetIdList;
 
   let regionNames: Intl.DisplayNames | null = null;
   try { regionNames = new Intl.DisplayNames(["th"], { type: "region" }); } catch { /* fall back to codes */ }
 
   const fields = "id,name,status,effective_status,optimization_goal,bid_strategy,daily_budget,lifetime_budget,start_time,end_time,targeting,campaign{name,objective}";
   const results: AdsetTarget[] = [];
-  for (const part of chunk(adsetIds, 25)) {
+  for (const part of chunk(adsetIdsAll, 25)) {
     const data = await graph(`${BASE}/?ids=${part.join(",")}&fields=${encodeURIComponent(fields)}&access_token=${token}`);
     for (const id of part) {
       const a: Json = data[id];

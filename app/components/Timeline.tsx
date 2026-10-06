@@ -215,6 +215,123 @@ function formatDetails(details?: Record<string, string>, keywords?: Keyword[]): 
   return parts.join("; ");
 }
 
+// ── CSV import (same columns as Export CSV: Date, Channel, Campaign, Title, Description, Details) ──
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const src = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"') { if (src[i + 1] === '"') { cell += '"'; i++; } else quoted = false; }
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && src[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some(x => x.trim())) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some(x => x.trim())) rows.push(row);
+  return rows;
+}
+
+// Accepts 2026-10-05, 5/10/2026, 5-10-2026 (day first) and Buddhist years (2569).
+function normalizeDate(raw: string): string | null {
+  const v = raw.trim();
+  let y: number, m: number, d: number;
+  let match = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (match) { y = +match[1]; m = +match[2]; d = +match[3]; }
+  else if ((match = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/))) { d = +match[1]; m = +match[2]; y = +match[3]; }
+  else return null;
+  if (y > 2400) y -= 543;
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function parseDetailsCell(raw: string): { details?: Record<string, string>; keywords?: Keyword[] } {
+  let text = raw.trim();
+  let keywords: Keyword[] | undefined;
+  const k = text.indexOf("Keywords: ");
+  if (k >= 0) {
+    const kwStr = text.slice(k + "Keywords: ".length);
+    text = text.slice(0, k).replace(/;\s*$/, "");
+    const found: Keyword[] = [];
+    for (const m of kwStr.matchAll(/(\[[^\]]+\]|"[^"]+"|[^,]+?) \((Broad|Phrase|Exact)\)/g)) {
+      found.push({ t: m[1].trim().replace(/^[\["]|[\]"]$/g, "").trim(), m: m[2] as MatchType });
+    }
+    if (found.length) keywords = uniqueKeywords(found);
+  }
+  const details: Record<string, string> = {};
+  for (const part of text.split(/;\s+/)) {
+    const i = part.indexOf(":");
+    if (i > 0) { const key = part.slice(0, i).trim(); const val = part.slice(i + 1).trim(); if (key && val) details[key] = val; }
+  }
+  return { details: Object.keys(details).length ? details : undefined, keywords };
+}
+
+const COLS: Record<string, string[]> = {
+  date: ["date", "วันที่"],
+  channel: ["channel", "ช่องทาง"],
+  campaign: ["campaign", "แคมเปญ"],
+  title: ["title", "หัวข้อ"],
+  description: ["description", "รายละเอียด", "รายละเอียดเพิ่มเติม"],
+  details: ["details", "detail"],
+};
+
+function entriesFromCsv(text: string): { entries: TimelineEntry[]; skipped: number } {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { entries: [], skipped: 0 };
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const col = (name: string) => header.findIndex(h => COLS[name].includes(h));
+  const idx = { date: col("date"), channel: col("channel"), campaign: col("campaign"), title: col("title"), description: col("description"), details: col("details") };
+  if (idx.date < 0) return { entries: [], skipped: rows.length - 1 };
+  const out: TimelineEntry[] = [];
+  let skipped = 0;
+  for (const r of rows.slice(1)) {
+    const date = normalizeDate(r[idx.date] ?? "");
+    if (!date) { skipped++; continue; }
+    const get = (i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
+    const { details, keywords } = parseDetailsCell(get(idx.details));
+    const channel = get(idx.channel);
+    out.push({
+      id: uid(), date,
+      channel: channel || undefined,
+      campaign: get(idx.campaign) || undefined,
+      title: get(idx.title),
+      description: get(idx.description) || undefined,
+      details,
+      keywords: channel === "Google" ? keywords : undefined,
+      createdAt: Date.now(),
+    });
+  }
+  return { entries: out, skipped };
+}
+
+const entryKey = (e: TimelineEntry) => [e.date, e.channel ?? "", e.campaign ?? "", e.title, JSON.stringify(e.details ?? {}), JSON.stringify(e.keywords ?? [])].join("|");
+
+function downloadCsvTemplate() {
+  const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
+  const rows = [
+    ["2026-10-05", "Facebook", "Lead Generation", "", "", "Budget: เพิ่มเป็น 2000 บาท; Objective: Leads"],
+    ["2026-10-06", "Google", "Search-Brand", "", "", 'Bidding: Max Click; Keywords: "esta" (Phrase), [esta serenity] (Exact)'],
+  ].map(r => r.map(csvCell).join(","));
+  const blob = new Blob(["\uFEFF" + [header, ...rows].join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "timeline-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
   const rows = [...entries]
@@ -337,6 +454,26 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
           style={{ background: "#fff", color: filtered.length === 0 ? "#cbd5e1" : "#374151", border: "1px solid #e2e8f0", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: filtered.length === 0 ? "default" : "pointer" }}>
           Export CSV
         </button>
+
+        <label title="นำเข้าจากไฟล์ CSV (คอลัมน์: Date, Channel, Campaign, Title, Description, Details)"
+          style={{ background: "#fff", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          Import CSV
+          <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
+            onChange={async e => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              const { entries: parsed, skipped } = entriesFromCsv(await file.text());
+              const have = new Set(entries.map(entryKey));
+              const fresh = parsed.filter(p => { const k = entryKey(p); if (have.has(k)) return false; have.add(k); return true; });
+              if (!parsed.length) { alert(skipped ? `อ่านไม่ได้เลย (${skipped} แถว) — ตรวจว่าแถวแรกมีหัวคอลัมน์ Date และวันที่อยู่ในรูปแบบ 2026-10-05 หรือ 5/10/2026` : "ไฟล์ว่างหรือไม่มีข้อมูล"); return; }
+              const dup = parsed.length - fresh.length;
+              if (!fresh.length) { alert(`ทุกรายการมีอยู่แล้ว (ซ้ำ ${dup} รายการ)`); return; }
+              if (confirm(`นำเข้า ${fresh.length} เหตุการณ์${dup ? ` (ข้ามที่ซ้ำ ${dup})` : ""}${skipped ? ` (อ่านไม่ได้ ${skipped} แถว)` : ""}?`)) onChange([...entries, ...fresh]);
+            }} />
+        </label>
+        <button onClick={downloadCsvTemplate} title="ดาวน์โหลดไฟล์ตัวอย่างสำหรับ Import"
+          style={{ background: "none", color: "#2563eb", border: "none", fontSize: 11, cursor: "pointer", padding: "0 2px" }}>ไฟล์ตัวอย่าง</button>
 
         <div style={{ width: 1, height: 20, background: "#e5e7eb", margin: "0 4px" }} />
 

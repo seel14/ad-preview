@@ -220,6 +220,26 @@ function AdCard({ ad, edit, onEdit }: { ad: ShareAd; edit?: AdEdit; onEdit: (e: 
   );
 }
 
+// Scales a fixed-width slide to fit the screen; its height follows the content (dense slides are taller).
+function ScaledSlide({ scale, children }: { scale: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState(679);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setH(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div style={{ width: 960 * scale, height: h * scale, margin: "0 auto" }}>
+      <div ref={ref} style={{ width: 960, transform: `scale(${scale})`, transformOrigin: "top left" }}>{children}</div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SharePage() {
@@ -370,11 +390,9 @@ export default function SharePage() {
                 {data.targets.map((t, i) => <option key={t.adsetId} value={i}>{t.adsetName}</option>)}
               </select>
             </div>
-            <div style={{ width: 960 * slideScale, height: 679 * slideScale, margin: "0 auto", overflow: "hidden" }}>
-              <div style={{ width: 960, transform: `scale(${slideScale})`, transformOrigin: "top left" }}>
-                <TargetSlide item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
-              </div>
-            </div>
+            <ScaledSlide scale={slideScale}>
+              <TargetSlide item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
+            </ScaledSlide>
           </>
         )}
 

@@ -13,28 +13,28 @@ const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
   PAUSED: { bg: "#fef3c7", fg: "#92400e" },
 };
 
-function Chip({ text, tone = "blue" }: { text: string; tone?: "blue" | "red" | "slate" | "violet" }) {
+function Chip({ text, tone = "blue", dense = false }: { text: string; tone?: "blue" | "red" | "slate" | "violet"; dense?: boolean }) {
   const c = {
     blue: { bg: "#dbeafe", fg: "#1e3a8a" },
     red: { bg: "#fee2e2", fg: "#991b1b" },
     slate: { bg: "#f1f5f9", fg: "#334155" },
     violet: { bg: "#ede9fe", fg: "#5b21b6" },
   }[tone];
-  return <span style={{ background: c.bg, color: c.fg, fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 9999, lineHeight: 1.5 }}>{text}</span>;
+  return <span style={{ background: c.bg, color: c.fg, fontSize: dense ? 10 : 11, fontWeight: 600, padding: dense ? "1px 7px" : "2px 9px", borderRadius: 9999, lineHeight: 1.4 }}>{text}</span>;
 }
 
 function Section({ title, children, grow }: { title: string; children: React.ReactNode; grow?: boolean }) {
   return (
-    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", flex: grow ? 1 : undefined, minHeight: 0, overflow: "hidden" }}>
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", flex: grow ? 1 : undefined, minHeight: 0 }}>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#64748b", marginBottom: 6 }}>{title}</div>
       {children}
     </div>
   );
 }
 
-const Chips = ({ items, tone, max = 40 }: { items: string[]; tone?: "blue" | "red" | "slate" | "violet"; max?: number }) => (
-  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-    {items.slice(0, max).map((x, i) => <Chip key={i} text={x} tone={tone} />)}
+const Chips = ({ items, tone, max = 200, dense = false }: { items: string[]; tone?: "blue" | "red" | "slate" | "violet"; max?: number; dense?: boolean }) => (
+  <div style={{ display: "flex", flexWrap: "wrap", gap: dense ? 3 : 4 }}>
+    {items.slice(0, max).map((x, i) => <Chip key={i} text={x} tone={tone} dense={dense} />)}
     {items.length > max && <Chip text={`+${items.length - max} more`} tone="slate" />}
   </div>
 );
@@ -48,13 +48,13 @@ const Row = ({ k, v }: { k: string; v: string }) => v ? (
 
 const Empty = () => <span style={{ fontSize: 12, color: "#94a3b8" }}>ไม่ได้กำหนด</span>;
 
-function Groups({ groups, tone }: { groups: TargetGroup[]; tone: "blue" | "red" }) {
+function Groups({ groups, tone, dense = false }: { groups: TargetGroup[]; tone: "blue" | "red"; dense?: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {groups.map(g => (
         <div key={g.label}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 2 }}>{g.label}</div>
-          <Chips items={g.items} tone={tone} />
+          <Chips items={g.items} tone={tone} dense={dense} />
         </div>
       ))}
     </div>
@@ -167,8 +167,10 @@ function compact(n: number) {
 export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Record<string, string> }) {
   const st = STATUS_COLOR[item.status] ?? { bg: "#e2e8f0", fg: "#475569" };
   const names = item.adIds.map(id => adNames[id]).filter(Boolean);
+  const chipCount = [...item.detailed, ...item.excludedDetailed].reduce((n, g) => n + g.items.length, 0);
+  const dense = chipCount > 36;
   return (
-    <div id="export-target-slide" style={{ width: SLIDE_W, minWidth: SLIDE_W, height: SLIDE_H, minHeight: SLIDE_H, flexShrink: 0, boxSizing: "border-box", background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", overflow: "hidden", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+    <div id="export-target-slide" style={{ width: SLIDE_W, minWidth: SLIDE_W, minHeight: SLIDE_H, flexShrink: 0, boxSizing: "border-box", background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", border: "1px solid #e5e7eb", borderRadius: 8 }}>
       <div style={{ padding: "22px 28px 14px", background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#2563eb", textTransform: "uppercase" }}>Ad Set Targeting</div>
@@ -214,11 +216,11 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
           <Section title="Detailed Targeting" grow>
-            {item.detailed.length ? <Groups groups={item.detailed} tone="blue" /> : <Empty />}
+            {item.detailed.length ? <Groups groups={item.detailed} tone="blue" dense={dense} /> : <Empty />}
             {item.excludedDetailed.length > 0 && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#b91c1c", marginBottom: 2 }}>ยกเว้น</div>
-                <Groups groups={item.excludedDetailed} tone="red" />
+                <Groups groups={item.excludedDetailed} tone="red" dense={dense} />
               </div>
             )}
           </Section>

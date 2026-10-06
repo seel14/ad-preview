@@ -701,9 +701,11 @@ export default function Home() {
           const el = document.getElementById("export-target-slide");
           if (!el) continue;
           const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#f8fafc" });
-          const imgH = (canvas.height / canvas.width) * PDF_PAGE_W;
+          // Fit inside the page keeping the aspect ratio (a dense slide is taller than the page ratio).
+          const k = Math.min(PDF_PAGE_W / canvas.width, PDF_PAGE_H / canvas.height);
+          const w = canvas.width * k, h = canvas.height * k;
           if (!firstPage) pdf.addPage();
-          pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, Math.max(0, (PDF_PAGE_H - imgH) / 2), PDF_PAGE_W, Math.min(imgH, PDF_PAGE_H));
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", (PDF_PAGE_W - w) / 2, (PDF_PAGE_H - h) / 2, w, h);
           firstPage = false;
         }
         setTargetIndex(0);

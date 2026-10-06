@@ -266,7 +266,28 @@ function normalizeDate(raw: string): string | null {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function parseDetailsCell(raw: string): { details?: Record<string, string>; keywords?: Keyword[] } {
+// "Budget: Increase 1000 → 1500 (+50%) (note)" → structured change when the category/action are known.
+function parseChangePart(part: string, channel: string): ChangeItem | null {
+  const i = part.indexOf(":");
+  if (i <= 0) return null;
+  const cat = categoriesForChannel(channel).find(c => c.name.toLowerCase() === part.slice(0, i).trim().toLowerCase());
+  if (!cat) return null;
+  let rest = part.slice(i + 1).trim();
+  rest = rest.replace(/\s*\([+-]?\d+(\.\d+)?%\)/, "");
+  let note: string | undefined;
+  const noteMatch = rest.match(/\s*\(([^()]*)\)\s*$/);
+  if (noteMatch) { note = noteMatch[1].trim() || undefined; rest = rest.slice(0, noteMatch.index).trim(); }
+  const action = [...cat.actions].sort((a, b) => b.label.length - a.label.length).find(a => rest.toLowerCase().startsWith(a.label.toLowerCase()));
+  const base = { id: uid(), category: cat.name };
+  if (!action) return { ...base, action: "อื่นๆ", note: [rest, note].filter(Boolean).join(" ") || undefined };
+  const value = rest.slice(action.label.length).trim();
+  const arrow = value.split(/\s*(?:→|->)\s*/);
+  if (arrow.length === 2) return { ...base, action: action.label, from: arrow[0] || undefined, to: arrow[1] || undefined, note };
+  if (value) return action.kind === "fromto" || action.kind === "value" ? { ...base, action: action.label, to: value, note } : { ...base, action: action.label, note: [value, note].filter(Boolean).join(" ") };
+  return { ...base, action: action.label, note };
+}
+
+function parseDetailsCell(raw: string, channel = ""): { details?: Record<string, string>; keywords?: Keyword[]; changes?: ChangeItem[] } {
   let text = raw.trim();
   let keywords: Keyword[] | undefined;
   const k = text.indexOf("Keywords: ");
@@ -280,11 +301,14 @@ function parseDetailsCell(raw: string): { details?: Record<string, string>; keyw
     if (found.length) keywords = uniqueKeywords(found);
   }
   const details: Record<string, string> = {};
+  const changes: ChangeItem[] = [];
   for (const part of text.split(/;\s+/)) {
+    const change = parseChangePart(part, channel);
+    if (change) { changes.push(change); continue; }
     const i = part.indexOf(":");
     if (i > 0) { const key = part.slice(0, i).trim(); const val = part.slice(i + 1).trim(); if (key && val) details[key] = val; }
   }
-  return { details: Object.keys(details).length ? details : undefined, keywords };
+  return { details: Object.keys(details).length ? details : undefined, keywords, changes: changes.length ? changes : undefined };
 }
 
 const COLS: Record<string, string[]> = {
@@ -309,8 +333,8 @@ function entriesFromCsv(text: string): { entries: TimelineEntry[]; skipped: numb
     const date = normalizeDate(r[idx.date] ?? "");
     if (!date) { skipped++; continue; }
     const get = (i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
-    const { details, keywords } = parseDetailsCell(get(idx.details));
     const channel = get(idx.channel);
+    const { details, keywords, changes } = parseDetailsCell(get(idx.details), channel);
     out.push({
       id: uid(), date,
       channel: channel || undefined,
@@ -318,6 +342,7 @@ function entriesFromCsv(text: string): { entries: TimelineEntry[]; skipped: numb
       title: get(idx.title),
       description: get(idx.description) || undefined,
       details,
+      changes,
       keywords: channel === "Google" ? keywords : undefined,
       createdAt: Date.now(),
     });
@@ -325,13 +350,13 @@ function entriesFromCsv(text: string): { entries: TimelineEntry[]; skipped: numb
   return { entries: out, skipped };
 }
 
-const entryKey = (e: TimelineEntry) => [e.date, e.channel ?? "", e.campaign ?? "", e.title, JSON.stringify(e.details ?? {}), JSON.stringify(e.keywords ?? [])].join("|");
+const entryKey = (e: TimelineEntry) => [e.date, e.channel ?? "", e.campaign ?? "", e.title, JSON.stringify(e.details ?? {}), JSON.stringify(e.keywords ?? []), JSON.stringify((e.changes ?? []).map(c => [c.category, c.action, c.from, c.to, c.note]))].join("|");
 
 function downloadCsvTemplate() {
   const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
   const rows = [
-    ["2026-10-05", "Facebook", "Lead Generation", "", "", "Budget: เพิ่มเป็น 2000 บาท; Objective: Leads"],
-    ["2026-10-06", "Google", "Search-Brand", "", "", 'Bidding: Max Click; Keywords: "esta" (Phrase), [esta serenity] (Exact)'],
+    ["2026-10-05", "Facebook", "Lead Generation", "", "", "Budget: Increase 1000 → 1500; Ad Set: Inactive (หยุดชุดที่ CPL สูง)"],
+    ["2026-10-06", "Google", "Search-Brand", "", "", 'Bidding: เปลี่ยน Strategy Max Click → Max Conversions; Keyword: เพิ่ม Keyword; Keywords: "esta" (Phrase), [esta serenity] (Exact)'],
   ].map(r => r.map(csvCell).join(","));
   const blob = new Blob(["\uFEFF" + [header, ...rows].join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);

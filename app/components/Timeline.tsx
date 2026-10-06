@@ -699,12 +699,32 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                     })}
                   </div>
 
-                  {[...new Set(form.changes.map(c => c.category))].map(category => {
+                  {[...new Set(form.changes.map(c => c.category))].map((category, catIdx, order) => {
                     const def = cats.find(c => c.name === category);
+                    const moveCategory = (dir: -1 | 1) => setForm(f => {
+                      const cur = [...new Set(f.changes.map(c => c.category))];
+                      const j = catIdx + dir;
+                      if (j < 0 || j >= cur.length) return f;
+                      [cur[catIdx], cur[j]] = [cur[j], cur[catIdx]];
+                      return { ...f, changes: cur.flatMap(cat => f.changes.filter(c => c.category === cat)) };
+                    });
                     const rows = form.changes.filter(c => c.category === category);
                     return (
                       <div key={category} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 0.4 }}>{category}</span>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 0.4 }}>{category}</span>
+                          {order.length > 1 && (
+                            <span style={{ display: "inline-flex", gap: 3 }}>
+                              {([[-1, "▲", "เลื่อนขึ้น"], [1, "▼", "เลื่อนลง"]] as const).map(([dir, ch, tip]) => {
+                                const off = catIdx + dir < 0 || catIdx + dir >= order.length;
+                                return (
+                                  <button key={ch} type="button" disabled={off} title={tip} onClick={() => moveCategory(dir)}
+                                    style={{ fontSize: 9, lineHeight: 1, padding: "3px 7px", border: "1px solid #e2e8f0", borderRadius: 5, background: "#f8fafc", color: off ? "#cbd5e1" : "#475569", cursor: off ? "default" : "pointer" }}>{ch}</button>
+                                );
+                              })}
+                            </span>
+                          )}
+                        </div>
                         {rows.map(row => {
                           const known = actionDef(channel, category, row.action);
                           const custom = row.action === CUSTOM_ACTION || (!!row.action && !known);

@@ -347,6 +347,7 @@ export default function Home() {
   const [fontCfg, setFontCfg] = useState<FontCfg>({ kind: "default" });
   const [customFont, setCustomFont] = useState("");
   const [targets, setTargets] = useState<AdsetTarget[]>([]);
+  const [savedTargetIds, setSavedTargetIds] = useState<Set<string>>(new Set());
   const [targetIndex, setTargetIndex] = useState(0);
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetError, setTargetError] = useState("");
@@ -407,7 +408,9 @@ export default function Home() {
     setToken(currentProject?.token ?? "");
     setAdIdsInput(currentProject?.adIds.join("\n") ?? "");
     setAds([...((currentProject?.cachedAds as AdData[] | undefined) ?? []), ...customToAdData(currentProject?.customAds ?? [])]);
-    setTargets((currentProject?.cachedTargets as AdsetTarget[] | undefined) ?? []);
+    const savedTargets = (currentProject?.cachedTargets as AdsetTarget[] | undefined) ?? [];
+    setTargets(savedTargets);
+    setSavedTargetIds(new Set(savedTargets.map(t => t.adsetId)));
     setTargetIndex(0);
     setTargetError("");
     setAdsetOptions([]);
@@ -968,26 +971,70 @@ export default function Home() {
     }
   }
 
-  async function fetchTargets() {
+  // Only saved Ad Sets are kept in the project; unsaved ones disappear when the page is reloaded.
+  async function persistSavedTargets(list: AdsetTarget[], ids: Set<string>) {
+    await patchProject({ cachedTargets: list.filter(t => ids.has(t.adsetId)) });
+  }
+
+  async function toggleSaveTarget(id: string) {
+    const next = new Set(savedTargetIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSavedTargetIds(next);
+    await persistSavedTargets(targets, next);
+  }
+
+  async function saveAllTargets() {
+    const next = new Set(targets.map(t => t.adsetId));
+    setSavedTargetIds(next);
+    await persistSavedTargets(targets, next);
+  }
+
+  async function removeTarget(id: string) {
+    const list = targets.filter(t => t.adsetId !== id);
+    const next = new Set(savedTargetIds);
+    next.delete(id);
+    setTargets(list);
+    setSavedTargetIds(next);
+    setTargetIndex(i => Math.min(i, Math.max(0, list.length - 1)));
+    await persistSavedTargets(list, next);
+  }
+
+  function clearUnsavedTargets() {
+    setTargets(prev => prev.filter(t => savedTargetIds.has(t.adsetId)));
+    setTargetIndex(0);
+  }
+
+  // `force` re-downloads Ad Sets that are already saved; otherwise saved ones are skipped (no reload needed).
+  async function fetchTargets(force = false) {
     const chosen = adsetOptions.filter(o => adsetSel.has(o.id));
     if (!chosen.length) return;
-    setTargetLoading(true);
+    const toFetch = force ? chosen : chosen.filter(o => !savedTargetIds.has(o.id));
     setTargetError("");
+    if (!toFetch.length) {
+      const first = targets.findIndex(t => t.adsetId === chosen[0].id);
+      if (first >= 0) setTargetIndex(first);
+      setTargetError("Ad Set ที่เลือกถูกบันทึกไว้แล้วทั้งหมด จึงไม่ต้องโหลดใหม่ (เลือกดูจากรายการด้านล่าง หรือกด \"รีเฟรชที่เลือก\" ถ้าต้องการข้อมูลล่าสุด)");
+      return;
+    }
+    setTargetLoading(true);
     try {
       const r = await fetch("/api/targets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          adsetIds: chosen.map(o => o.id),
-          adIdsByAdset: Object.fromEntries(chosen.map(o => [o.id, o.adIds])),
+          adsetIds: toFetch.map(o => o.id),
+          adIdsByAdset: Object.fromEntries(toFetch.map(o => [o.id, o.adIds])),
           ...(pickerSource === "account" ? { useStored: true } : { token: token.trim() }),
         }),
       });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data?.error ?? "ดึง Target ไม่สำเร็จ");
-      setTargets(data);
-      setTargetIndex(0);
-      await patchProject({ cachedTargets: data });
+      const data: AdsetTarget[] = await r.json();
+      if (!r.ok) throw new Error((data as unknown as { error?: string })?.error ?? "ดึง Target ไม่สำเร็จ");
+      // Merge into the existing list (updated ones keep their place, new ones go to the end).
+      const fresh = new Map(data.map(d => [d.adsetId, d]));
+      const merged = [...targets.map(t => fresh.get(t.adsetId) ?? t), ...data.filter(d => !targets.some(t => t.adsetId === d.adsetId))];
+      setTargets(merged);
+      setTargetIndex(Math.max(0, merged.findIndex(t => fresh.has(t.adsetId))));
+      if (data.some(d => savedTargetIds.has(d.adsetId))) await persistSavedTargets(merged, savedTargetIds);
     } catch (e) {
       setTargetError(e instanceof Error ? e.message : "ดึง Target ไม่สำเร็จ");
     } finally {
@@ -1710,8 +1757,9 @@ export default function Home() {
                 picker={{
                   source: pickerSource, onSourceChange: setPickerSource, loadedCount: targetAdIds.length, accountLabel: fbAccountLabel,
                   canLoadLoaded: !!token.trim() && targetAdIds.length > 0, options: adsetOptions, selected: adsetSel, onSelectedChange: setAdsetSel,
-                  onLoadList: loadAdsetList, listLoading: adsetListLoading, onFetch: fetchTargets, fetching: targetLoading,
+                  onLoadList: loadAdsetList, listLoading: adsetListLoading, onFetch: fetchTargets, fetching: targetLoading, savedIds: savedTargetIds,
                 }}
+                savedIds={savedTargetIds} onToggleSave={toggleSaveTarget} onSaveAll={saveAllTargets} onRemove={removeTarget} onClearUnsaved={clearUnsavedTargets}
                 onExportPdf={handleExportTargetPDF} exporting={targetExporting} exportMode={exportMode} />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>

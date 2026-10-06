@@ -272,8 +272,9 @@ export interface PickerProps {
   onSelectedChange: (s: Set<string>) => void;
   onLoadList: () => void;
   listLoading: boolean;
-  onFetch: () => void;
+  onFetch: (force: boolean) => void;
   fetching: boolean;
+  savedIds: Set<string>;
 }
 
 function AdsetPicker({ p, startOpen }: { p: PickerProps; startOpen: boolean }) {
@@ -350,15 +351,22 @@ function AdsetPicker({ p, startOpen }: { p: PickerProps; startOpen: boolean }) {
                         <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
                         <span style={{ display: "block", fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.campaignName}{o.adIds.length ? ` · ${o.adIds.length} ads` : ""}</span>
                       </span>
+                      {p.savedIds.has(o.id) && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 9, fontWeight: 800, padding: "1px 8px", borderRadius: 9999 }}>★ บันทึกแล้ว</span>}
                       {o.status && <span style={{ background: st.bg, color: st.fg, fontSize: 9, fontWeight: 800, padding: "1px 8px", borderRadius: 9999 }}>{o.status}</span>}
                     </label>
                   );
                 })}
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button onClick={p.onFetch} disabled={p.selected.size === 0 || p.fetching} className="cursor-pointer"
+                {(() => { const savedSel = [...p.selected].filter(id => p.savedIds.has(id)).length; return savedSel > 0 && (
+                  <button onClick={() => p.onFetch(true)} disabled={p.fetching} className="cursor-pointer"
+                    style={{ marginRight: "auto", fontSize: 11, color: "#2563eb", background: "none", border: "none" }}>
+                    รีเฟรชที่เลือก ({savedSel} ตัวที่บันทึกไว้แล้ว)
+                  </button>
+                ); })()}
+                <button onClick={() => p.onFetch(false)} disabled={p.selected.size === 0 || p.fetching} className="cursor-pointer"
                   style={{ fontSize: 12, fontWeight: 700, padding: "8px 18px", borderRadius: 8, border: "none", color: "#fff", background: p.selected.size === 0 || p.fetching ? "#94a3b8" : "#16a34a" }}>
-                  {p.fetching ? "กำลังดึง Target..." : `ดึง Target ที่เลือก (${p.selected.size})`}
+                  {p.fetching ? "กำลังดึง Target..." : `ดึง Target ที่เลือก (${[...p.selected].filter(id => !p.savedIds.has(id)).length || p.selected.size})`}
                 </button>
               </div>
             </>
@@ -369,7 +377,8 @@ function AdsetPicker({ p, startOpen }: { p: PickerProps; startOpen: boolean }) {
   );
 }
 
-export default function TargetView({ targets, adNames, index, onIndexChange, loading, error, picker, onExportPdf, exporting, exportMode }: {
+export default function TargetView({ targets, adNames, index, onIndexChange, loading, error, picker, onExportPdf, exporting, exportMode, savedIds, onToggleSave, onSaveAll, onRemove, onClearUnsaved }: {
+  savedIds: Set<string>; onToggleSave: (id: string) => void; onSaveAll: () => void; onRemove: (id: string) => void; onClearUnsaved: () => void;
   targets: AdsetTarget[]; adNames: Record<string, string>; index: number; onIndexChange: (i: number) => void;
   loading: boolean; error: string; picker: PickerProps; onExportPdf: () => void; exporting: boolean; exportMode: boolean;
 }) {
@@ -388,8 +397,25 @@ export default function TargetView({ targets, adNames, index, onIndexChange, loa
                 style={{ fontSize: 12, padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", opacity: index === targets.length - 1 ? 0.4 : 1 }}>›</button>
               <select value={index} onChange={e => onIndexChange(Number(e.target.value))}
                 style={{ fontSize: 12, padding: "6px 8px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", maxWidth: 260 }}>
-                {targets.map((t, i) => <option key={t.adsetId} value={i}>{t.adsetName}</option>)}
+                {targets.map((t, i) => <option key={t.adsetId} value={i}>{savedIds.has(t.adsetId) ? "★ " : ""}{t.adsetName}</option>)}
               </select>
+              {item && (() => {
+                const saved = savedIds.has(item.adsetId);
+                return (
+                  <button onClick={() => onToggleSave(item.adsetId)} className="cursor-pointer"
+                    title={saved ? "ยกเลิกการบันทึก (จะหายไปเมื่อโหลดหน้าใหม่)" : "บันทึก Ad Set นี้ไว้ ไม่ต้องโหลดใหม่ทุกครั้ง"}
+                    style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 8, cursor: "pointer", border: saved ? "1.5px solid #eab308" : "1.5px solid #e2e8f0", background: saved ? "#fef9c3" : "#fff", color: saved ? "#854d0e" : "#475569" }}>
+                    {saved ? "★ บันทึกแล้ว" : "☆ บันทึก"}
+                  </button>
+                );
+              })()}
+              {targets.some(x => !savedIds.has(x.adsetId)) && (
+                <button onClick={onSaveAll} className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb", background: "none", border: "none" }}>บันทึกทั้งหมด ({targets.filter(x => !savedIds.has(x.adsetId)).length})</button>
+              )}
+              {targets.some(x => !savedIds.has(x.adsetId)) && (
+                <button onClick={onClearUnsaved} className="cursor-pointer" style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none" }}>ล้างที่ยังไม่บันทึก</button>
+              )}
+              {item && <button onClick={() => { if (confirm(`เอา "${item.adsetName}" ออกจากรายการ?`)) onRemove(item.adsetId); }} className="cursor-pointer" style={{ fontSize: 11, color: "#dc2626", background: "none", border: "none" }}>เอาออก</button>}
               <button onClick={onExportPdf} disabled={exporting} className="cursor-pointer"
                 style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 8, border: "none", color: "#b91c1c", background: "#fee2e2" }}>
                 {exporting ? "..." : "Target PDF"}

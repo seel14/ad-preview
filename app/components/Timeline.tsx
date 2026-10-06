@@ -542,8 +542,15 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
 
       <div style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
         {adding && (
-          <div style={{ maxWidth: 480, margin: "0 auto 24px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{editingId ? "แก้ไขเหตุการณ์" : "เพิ่มเหตุการณ์ใหม่"}</div>
+          <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }} onClick={cancelForm}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ width: 1040, maxWidth: "100%", maxHeight: "92vh", display: "flex", flexDirection: "column", background: "#fff", borderRadius: 14, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
+              <div style={{ padding: "14px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{editingId ? "แก้ไขเหตุการณ์" : "เพิ่มเหตุการณ์ใหม่"}</div>
+                <button onClick={cancelForm} aria-label="ปิด" style={{ fontSize: 16, lineHeight: 1, padding: "3px 9px", borderRadius: 8, border: "none", background: "#f1f5f9", color: "#64748b", cursor: "pointer" }}>✕</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 20, display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+                <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px" }} />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -602,6 +609,71 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
               );
             })()}
 
+            {IMAGE_CHANNELS.includes(form.channel.trim()) && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>รูป Ads ({form.images.length})</div>
+                {form.images.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {form.images.map((im, i) => (
+                      <div key={i} style={{ position: "relative", width: 64 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={im.src} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} />
+                        <button onClick={() => setForm(f => ({ ...f, images: f.images.filter((_, j) => j !== i) }))}
+                          style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {adOptions.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>เลือกจาก Ads ที่โหลดไว้</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 6, maxHeight: 170, overflowY: "auto" }}>
+                      {adOptions.map(ad => {
+                        const picked = form.images.some(im => im.adId === ad.id);
+                        return (
+                          <button key={ad.id} type="button" disabled={!ad.image || imgBusy}
+                            title={ad.name}
+                            onClick={async () => {
+                              if (picked) { setForm(f => ({ ...f, images: f.images.filter(im => im.adId !== ad.id) })); return; }
+                              setImgBusy(true);
+                              try {
+                                const src = await toThumbDataUrl(ad.image);
+                                setForm(f => ({ ...f, images: [...f.images, { src, name: ad.name, adId: ad.id }] }));
+                              } catch { alert("โหลดรูปนี้ไม่สำเร็จ ลองอัปโหลดรูปเองแทน"); }
+                              finally { setImgBusy(false); }
+                            }}
+                            style={{ padding: 0, border: picked ? "2px solid #2563eb" : "2px solid transparent", borderRadius: 8, background: "none", cursor: ad.image ? "pointer" : "default", opacity: ad.image ? 1 : 0.4, textAlign: "left" }}>
+                            {ad.image
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={ad.image} alt="" referrerPolicy="no-referrer" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 6, display: "block" }} />
+                              : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#e2e8f0", borderRadius: 6 }} />}
+                            <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.2, padding: "2px 2px 0", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-all" }}>{ad.name}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <label className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb", fontWeight: 600 }}>
+                  {imgBusy ? "กำลังประมวลผลรูป..." : "+ อัปโหลดรูปเอง"}
+                  <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={imgBusy}
+                    onChange={async e => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = "";
+                      if (!files.length) return;
+                      setImgBusy(true);
+                      try {
+                        const added: TimelineImage[] = [];
+                        for (const f of files) added.push({ src: await toThumbDataUrl(f), name: f.name.replace(/\.[^.]+$/, "") });
+                        setForm(fm => ({ ...fm, images: [...fm.images, ...added] }));
+                      } catch { alert("อ่านไฟล์รูปไม่สำเร็จ"); }
+                      finally { setImgBusy(false); }
+                    }} />
+                </label>
+              </div>
+            )}
+                </div>
+                <div style={{ flex: "2 1 460px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             {/* What changed: category chips → per-category action dropdown with from/to values */}
             {categoriesForChannel(form.channel.trim()).length > 0 && (() => {
               const channel = form.channel.trim();
@@ -723,75 +795,20 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 </div>
               );
             })()}
-            {IMAGE_CHANNELS.includes(form.channel.trim()) && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>รูป Ads ({form.images.length})</div>
-                {form.images.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {form.images.map((im, i) => (
-                      <div key={i} style={{ position: "relative", width: 64 }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={im.src} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} />
-                        <button onClick={() => setForm(f => ({ ...f, images: f.images.filter((_, j) => j !== i) }))}
-                          style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontSize: 10, cursor: "pointer", lineHeight: 1 }}>✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {adOptions.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>เลือกจาก Ads ที่โหลดไว้</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 6, maxHeight: 170, overflowY: "auto" }}>
-                      {adOptions.map(ad => {
-                        const picked = form.images.some(im => im.adId === ad.id);
-                        return (
-                          <button key={ad.id} type="button" disabled={!ad.image || imgBusy}
-                            title={ad.name}
-                            onClick={async () => {
-                              if (picked) { setForm(f => ({ ...f, images: f.images.filter(im => im.adId !== ad.id) })); return; }
-                              setImgBusy(true);
-                              try {
-                                const src = await toThumbDataUrl(ad.image);
-                                setForm(f => ({ ...f, images: [...f.images, { src, name: ad.name, adId: ad.id }] }));
-                              } catch { alert("โหลดรูปนี้ไม่สำเร็จ ลองอัปโหลดรูปเองแทน"); }
-                              finally { setImgBusy(false); }
-                            }}
-                            style={{ padding: 0, border: picked ? "2px solid #2563eb" : "2px solid transparent", borderRadius: 8, background: "none", cursor: ad.image ? "pointer" : "default", opacity: ad.image ? 1 : 0.4, textAlign: "left" }}>
-                            {ad.image
-                              // eslint-disable-next-line @next/next/no-img-element
-                              ? <img src={ad.image} alt="" referrerPolicy="no-referrer" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 6, display: "block" }} />
-                              : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#e2e8f0", borderRadius: 6 }} />}
-                            <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.2, padding: "2px 2px 0", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-all" }}>{ad.name}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <label className="cursor-pointer" style={{ fontSize: 11, color: "#2563eb", fontWeight: 600 }}>
-                  {imgBusy ? "กำลังประมวลผลรูป..." : "+ อัปโหลดรูปเอง"}
-                  <input type="file" accept="image/*" multiple style={{ display: "none" }} disabled={imgBusy}
-                    onChange={async e => {
-                      const files = Array.from(e.target.files ?? []);
-                      e.target.value = "";
-                      if (!files.length) return;
-                      setImgBusy(true);
-                      try {
-                        const added: TimelineImage[] = [];
-                        for (const f of files) added.push({ src: await toThumbDataUrl(f), name: f.name.replace(/\.[^.]+$/, "") });
-                        setForm(fm => ({ ...fm, images: [...fm.images, ...added] }));
-                      } catch { alert("อ่านไฟล์รูปไม่สำเร็จ"); }
-                      finally { setImgBusy(false); }
-                    }} />
-                </label>
+                  {categoriesForChannel(form.channel.trim()).length === 0 && (
+                    <div style={{ fontSize: 12, color: "#94a3b8", padding: "20px 4px" }}>เลือก Channel ทางซ้ายก่อน แล้วเลือกหมวดที่แก้ไขได้ที่นี่</div>
+                  )}
+                </div>
               </div>
-            )}
+              <div style={{ padding: "12px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc", borderRadius: "0 0 14px 14px" }}>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={cancelForm} style={{ fontSize: 12, color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "6px 10px" }}>ยกเลิก</button>
               <button onClick={saveForm} disabled={!canSave}
                 style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: !canSave ? "#94a3b8" : "#2563eb", border: "none", borderRadius: 6, padding: "6px 14px", cursor: !canSave ? "default" : "pointer" }}>
                 บันทึก
               </button>
+            </div>
+              </div>
             </div>
           </div>
         )}

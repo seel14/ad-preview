@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toThumbDataUrl } from "@/lib/imageUtil";
+import { CUSTOM_ACTION, actionDef, categoriesForChannel, formatChange, legacyToChanges, pctChange, valueText, type ChangeItem } from "@/lib/timelineChanges";
 import { MATCH_ORDER, MATCH_STYLE, formatKeyword, groupedKeywords, parseKeywordLine, uniqueKeywords, type Keyword, type MatchType } from "@/lib/keywords";
 
 export interface TimelineImage { src: string; name?: string; adId?: string }
@@ -15,6 +16,7 @@ export interface TimelineEntry {
   campaign?: string; // campaign name picked from Ads Structure
   images?: TimelineImage[]; // ad creatives shown on the card (Facebook / TikTok)
   keywords?: Keyword[]; // Google Ads search keywords with match types
+  changes?: ChangeItem[]; // structured "what changed" items (category → action → from/to)
   details?: Record<string, string>; // channel-specific fields, e.g. { Objective: "...", Target: "..." }
   createdAt: number;
 }
@@ -64,17 +66,6 @@ function ChannelIcon({ channel, size = 12 }: { channel: string; size?: number })
     );
   }
   return null;
-}
-
-// Which detail fields to show per channel, in order — customize here as new needs come up.
-const CHANNEL_FIELDS: Record<string, string[]> = {
-  Facebook: ["Target", "Budget", "Objective", "Ads"],
-  Google: ["Budget", "Bidding", "Keyword", "Text Ads"],
-  TikTok: ["Target", "Budget", "Objective", "Ads"],
-  LINE: ["Target", "Budget", "Objective", "Ads"],
-};
-function fieldsForChannel(channel: string): string[] {
-  return CHANNEL_FIELDS[channel] ?? [];
 }
 
 function DetailsList({ details, campaign, channel, align = "left" }: { details?: Record<string, string>; campaign?: string; channel?: string; align?: "left" | "center" }) {
@@ -135,6 +126,23 @@ function KeywordChips({ keywords, align }: { keywords?: Keyword[]; align: "left"
   );
 }
 
+function ChangeList({ changes, channel, align }: { changes?: ChangeItem[]; channel?: string; align: "left" | "center" }) {
+  if (!changes?.length) return null;
+  const color = channelColor(channel ?? "");
+  return (
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5, alignItems: align === "center" ? "center" : "stretch" }}>
+      {changes.map(c => (
+        <div key={c.id} style={{ fontSize: 11, color: "#334155", textAlign: align }}>
+          <span style={{ display: "inline-block", fontSize: 9, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", padding: "1px 7px", borderRadius: 4, background: color.bg, color: color.text, marginRight: 5 }}>{c.category}</span>
+          <b>{c.action}</b>
+          {valueText(c) && <span style={{ marginLeft: 5 }}>{valueText(c)}</span>}
+          {c.note && <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>{c.note}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function groupByChannel(entries: TimelineEntry[]): { channel: string; entries: TimelineEntry[] }[] {
   const groups: { channel: string; entries: TimelineEntry[] }[] = [];
   for (const entry of entries) {
@@ -175,6 +183,7 @@ function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width, re
               <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-line" }}>{entry.description}</div>
             )}
             <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align={align} />
+            <ChangeList changes={entry.changes} channel={entry.channel} align={align} />
             <KeywordChips keywords={entry.keywords} align={align} />
             <ImageStrip images={entry.images} align={align} />
             {!readOnly && <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
@@ -210,8 +219,8 @@ function csvCell(value: string): string {
 }
 
 // Flattens the per-channel detail fields into one readable cell, e.g. "Objective: Leads; Target: 25-34"
-function formatDetails(details?: Record<string, string>, keywords?: Keyword[]): string {
-  const parts = Object.entries(details ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+function formatDetails(details?: Record<string, string>, keywords?: Keyword[], changes?: ChangeItem[]): string {
+  const parts = [...(changes ?? []).map(formatChange), ...Object.entries(details ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`)];
   if (keywords?.length) parts.push(`Keywords: ${keywords.map(k => `${formatKeyword(k)} (${k.m})`).join(", ")}`);
   return parts.join("; ");
 }
@@ -337,7 +346,7 @@ function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   const header = ["Date", "Channel", "Campaign", "Title", "Description", "Details"].map(csvCell).join(",");
   const rows = [...entries]
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map(e => [e.date, e.channel ?? "", e.campaign ?? "", e.title, e.description ?? "", formatDetails(e.details, e.keywords)].map(csvCell).join(","));
+    .map(e => [e.date, e.channel ?? "", e.campaign ?? "", e.title, e.description ?? "", formatDetails(e.details, e.keywords, e.changes)].map(csvCell).join(","));
   // Prefix with a UTF-8 BOM so Thai text opens correctly in Excel
   const csv = "﻿" + [header, ...rows].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -362,7 +371,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   const [kwTypes, setKwTypes] = useState<MatchType[]>(["Broad"]);
   const [campaignOther, setCampaignOther] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", details: {} as Record<string, string>, images: [] as TimelineImage[], keywords: [] as Keyword[] });
+  const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", changes: [] as ChangeItem[], images: [] as TimelineImage[], keywords: [] as Keyword[] });
   const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
   const [filterFrom, setFilterFrom] = useState(() => {
     const now = new Date();
@@ -391,7 +400,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   }
 
   function startAdd() {
-    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", details: {}, images: [], keywords: [] });
+    setForm({ date: new Date().toISOString().slice(0, 10), channel: "", campaign: "", title: "", description: "", changes: [], images: [], keywords: [] });
     setEditingId(null);
     setOtherOpen(false);
     setCampaignOther(false);
@@ -400,7 +409,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   }
 
   function startEdit(entry: TimelineEntry) {
-    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", details: { ...(entry.details ?? {}), ...(entry.keywords?.length ? { Keyword: entry.details?.Keyword ?? "" } : {}) }, images: entry.images ?? [], keywords: entry.keywords ?? [] });
+    setForm({ date: entry.date, channel: entry.channel ?? "", campaign: entry.campaign ?? "", title: entry.title, description: entry.description ?? "", changes: entry.changes ?? legacyToChanges(entry.details), images: entry.images ?? [], keywords: entry.keywords ?? [] });
     setEditingId(entry.id);
     setOtherOpen(false);
     setCampaignOther(false);
@@ -413,29 +422,26 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
     setEditingId(null);
   }
 
-  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || Object.values(form.details).some(v => v.trim()) || form.images.length > 0 || form.keywords.length > 0);
+  const canSave = !!form.date && (!!form.title.trim() || !!form.channel.trim() || !!form.campaign || form.changes.length > 0 || form.images.length > 0 || form.keywords.length > 0);
 
   function saveForm() {
     if (!canSave) return;
-    // Only fields the user explicitly added (via the dropdown) are kept, so an untouched
-    // field never gets saved as an empty value.
-    const details: Record<string, string> = {};
-    for (const [field, value] of Object.entries(form.details)) {
-      const v = value.trim();
-      if (v) details[field] = v;
-    }
-    const detailsOrUndefined = Object.keys(details).length ? details : undefined;
+    // Incomplete rows (no action chosen) are dropped; legacy free-text details are migrated into `changes` on edit.
+    const changes = form.changes
+      .map(c => ({ ...c, from: c.from?.trim() || undefined, to: c.to?.trim() || undefined, note: c.note?.trim() || undefined }))
+      .filter(c => c.action && c.action !== CUSTOM_ACTION);
+    const changesOrUndefined = changes.length ? changes : undefined;
     const keywordsOrUndefined = form.channel.trim() === "Google" && form.keywords.length ? uniqueKeywords(form.keywords) : undefined;
     const imagesOrUndefined = IMAGE_CHANNELS.includes(form.channel.trim()) && form.images.length ? form.images : undefined;
 
     if (editingId) {
       onChange(entries.map(e => e.id === editingId
-        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined }
+        ? { ...e, date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(), description: form.description.trim() || undefined, details: undefined, changes: changesOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined }
         : e));
     } else {
       onChange([...entries, {
         id: uid(), date: form.date, channel: form.channel.trim() || undefined, campaign: form.campaign || undefined, title: form.title.trim(),
-        description: form.description.trim() || undefined, details: detailsOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined, createdAt: Date.now(),
+        description: form.description.trim() || undefined, changes: changesOrUndefined, images: imagesOrUndefined, keywords: keywordsOrUndefined, createdAt: Date.now(),
       }]);
     }
     cancelForm();
@@ -522,8 +528,8 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                 return (
                   <button key={c} type="button"
                     onClick={() => {
-                      if (preset) { setOtherOpen(false); setForm(f => ({ ...f, channel: f.channel === c ? "" : c, details: f.channel === c ? f.details : {} })); }
-                      else { setOtherOpen(true); setForm(f => CHANNEL_PRESETS.includes(f.channel) ? { ...f, channel: "", details: {} } : f); }
+                      if (preset) { setOtherOpen(false); setForm(f => ({ ...f, channel: f.channel === c ? "" : c, changes: f.channel === c ? f.changes : [] })); }
+                      else { setOtherOpen(true); setForm(f => CHANNEL_PRESETS.includes(f.channel) ? { ...f, channel: "", changes: [] } : f); }
                     }}
                     style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 8, cursor: "pointer",
                       border: on ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: on ? "#eff6ff" : "#fff", color: on ? "#1e40af" : "#64748b" }}>
@@ -571,33 +577,85 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
               );
             })()}
 
-            {/* Sub-topics per channel — toggle the ones that changed, then fill in what changed */}
-            {fieldsForChannel(form.channel.trim()).length > 0 && (() => {
-              const availableFields = fieldsForChannel(form.channel.trim());
-              const addedFields = availableFields.filter(f => f in form.details);
+            {/* What changed: category chips → per-category action dropdown with from/to values */}
+            {categoriesForChannel(form.channel.trim()).length > 0 && (() => {
+              const channel = form.channel.trim();
+              const cats = categoriesForChannel(channel);
+              const newRow = (category: string): ChangeItem => ({ id: uid(), category, action: "" });
+              const setRow = (id: string, patch: Partial<ChangeItem>) => setForm(f => ({ ...f, changes: f.changes.map(c => c.id === id ? { ...c, ...patch } : c) }));
+              const hasKeywordCat = cats.some(c => c.keywordEditor) && form.changes.some(c => cats.find(x => x.name === c.category)?.keywordEditor);
+              const inputStyle = { fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "6px 9px", background: "#fff", minWidth: 0 } as const;
               return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>
-                    แก้ไขอะไรใน {form.channel.trim()}
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10, background: "#f8fafc", borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.3 }}>แก้ไขอะไรใน {channel}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {availableFields.map(field => {
-                      const on = field in form.details;
+                    {[...cats.map(c => c.name), ...form.changes.map(c => c.category).filter(n => !cats.some(c => c.name === n))].filter((n, i, a) => a.indexOf(n) === i).map(name => {
+                      const on = form.changes.some(c => c.category === name);
                       return (
-                        <button key={field} type="button"
-                          onClick={() => setForm(f => {
-                            const next = { ...f.details };
-                            if (field in next) delete next[field]; else next[field] = "";
-                            return { ...f, details: next };
-                          })}
+                        <button key={name} type="button"
+                          onClick={() => setForm(f => on ? { ...f, changes: f.changes.filter(c => c.category !== name) } : { ...f, changes: [...f.changes, newRow(name)] })}
                           style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 9999, cursor: "pointer",
                             border: on ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: on ? "#eff6ff" : "#fff", color: on ? "#1e40af" : "#64748b" }}>
-                          {on ? "✓ " : "+ "}{field}
+                          {on ? "✓ " : "+ "}{name}
                         </button>
                       );
                     })}
                   </div>
-                  {form.channel.trim() === "Google" && "Keyword" in form.details && (
+
+                  {[...new Set(form.changes.map(c => c.category))].map(category => {
+                    const def = cats.find(c => c.name === category);
+                    const rows = form.changes.filter(c => c.category === category);
+                    return (
+                      <div key={category} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 0.4 }}>{category}</span>
+                        {rows.map(row => {
+                          const known = actionDef(channel, category, row.action);
+                          const custom = row.action === CUSTOM_ACTION || (!!row.action && !known);
+                          const kind = custom ? "text" : known?.kind ?? "none";
+                          const pct = pctChange(row.from, row.to);
+                          return (
+                            <div key={row.id} style={{ display: "flex", flexDirection: "column", gap: 5, paddingBottom: 6, borderBottom: "1px dashed #f1f5f9" }}>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <select value={custom ? CUSTOM_ACTION : row.action}
+                                  onChange={e => setRow(row.id, { action: e.target.value, from: undefined, to: undefined })}
+                                  style={{ ...inputStyle, flex: 1, color: row.action ? "#0f172a" : "#64748b" }}>
+                                  <option value="">เลือกประเภทการแก้ไข...</option>
+                                  {(def?.actions ?? []).map(a => <option key={a.label} value={a.label}>{a.label}</option>)}
+                                  <option value={CUSTOM_ACTION}>อื่นๆ (พิมพ์เอง)</option>
+                                </select>
+                                <button type="button" onClick={() => setForm(f => ({ ...f, changes: f.changes.filter(c => c.id !== row.id) }))}
+                                  style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 4px" }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>×</button>
+                              </div>
+                              {custom && (
+                                <input value={row.action === CUSTOM_ACTION ? "" : row.action} onChange={e => setRow(row.id, { action: e.target.value || CUSTOM_ACTION })}
+                                  placeholder="ชื่อการแก้ไข" style={inputStyle} />
+                              )}
+                              {kind === "fromto" && (
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <input value={row.from ?? ""} onChange={e => setRow(row.id, { from: e.target.value })} placeholder={`จาก${known?.unit ? ` (${known.unit})` : ""}`} style={{ ...inputStyle, flex: 1 }} />
+                                  <span style={{ color: "#94a3b8" }}>→</span>
+                                  <input value={row.to ?? ""} onChange={e => setRow(row.id, { to: e.target.value })} placeholder={`ถึง${known?.unit ? ` (${known.unit})` : ""}`} style={{ ...inputStyle, flex: 1 }} />
+                                  {pct && <span style={{ fontSize: 11, fontWeight: 700, color: pct.startsWith("-") ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}>{pct}</span>}
+                                </div>
+                              )}
+                              {kind === "value" && (
+                                <input value={row.to ?? ""} onChange={e => setRow(row.id, { to: e.target.value })} placeholder={`ค่า${known?.unit ? ` (${known.unit})` : ""}`} style={inputStyle} />
+                              )}
+                              {row.action && (
+                                <input value={row.note ?? ""} onChange={e => setRow(row.id, { note: e.target.value })}
+                                  placeholder={kind === "text" ? "รายละเอียด" : "หมายเหตุ (ไม่บังคับ)"} style={inputStyle} />
+                              )}
+                            </div>
+                          );
+                        })}
+                        <button type="button" onClick={() => setForm(f => ({ ...f, changes: [...f.changes, newRow(category)] }))}
+                          style={{ alignSelf: "flex-start", fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0 }}>+ เพิ่มอีกรายการใน {category}</button>
+                      </div>
+                    );
+                  })}
+
+                  {channel === "Google" && hasKeywordCat && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
                       <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b" }}>Search Keywords</span>
                       {form.keywords.length > 0 && (
@@ -614,7 +672,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                       )}
                       <textarea value={kwText} onChange={e => setKwText(e.target.value)} rows={3}
                         placeholder={'1 บรรทัดต่อ 1 Keyword\n[exact match]\n"phrase match"\nbroad match'}
-                        style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "6px 9px", resize: "vertical" }} />
+                        style={{ ...inputStyle, resize: "vertical" }} />
                       <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{ fontSize: 10, color: "#64748b" }}>Match Type (เลือกได้หลายอัน):</span>
                         {MATCH_ORDER.map(m => {
@@ -637,15 +695,6 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                       </div>
                     </div>
                   )}
-                  {addedFields.map(field => (
-                    <div key={field} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{field === "Keyword" && form.channel.trim() === "Google" ? "Keyword (หมายเหตุเพิ่มเติม)" : field}</span>
-                      <input type="text" value={form.details[field] ?? ""}
-                        onChange={e => setForm(f => ({ ...f, details: { ...f.details, [field]: e.target.value } }))}
-                        placeholder={`${field} เปลี่ยนเป็นอะไร`}
-                        style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "7px 10px", background: "#fff" }} />
-                    </div>
-                  ))}
                 </div>
               );
             })()}

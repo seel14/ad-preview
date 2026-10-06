@@ -29,6 +29,7 @@ export interface TimelineEntry {
   campaign?: string;
   images?: { src: string; name?: string; adId?: string }[];
   keywords?: { t: string; m: "Broad" | "Phrase" | "Exact" }[];
+  changes?: { id: string; category: string; action: string; from?: string; to?: string; note?: string }[];
   title: string;
   description?: string;
   details?: Record<string, string>;

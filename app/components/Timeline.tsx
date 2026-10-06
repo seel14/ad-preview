@@ -152,7 +152,8 @@ function groupByChannel(entries: TimelineEntry[]): { channel: string; entries: T
 }
 
 // One card per channel on a date: badge, then each entry (campaign shown once for consecutive same-campaign entries).
-function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: {
+function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width, readOnly = false }: {
+  readOnly?: boolean;
   channel: string; entries: TimelineEntry[]; align: "left" | "center";
   onEdit: (e: TimelineEntry) => void; onRemove: (id: string) => void; width: number | string;
 }) {
@@ -176,7 +177,7 @@ function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: 
             <DetailsList details={entry.details} campaign={sameCampaignAsPrev ? undefined : entry.campaign} channel={entry.channel} align={align} />
             <KeywordChips keywords={entry.keywords} align={align} />
             <ImageStrip images={entry.images} align={align} />
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
+            {!readOnly && <div className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ display: "flex", gap: 8, justifyContent: align === "center" ? "center" : "flex-start", marginTop: 6 }}>
               <button onClick={() => onEdit(entry)} style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer", fontSize: 11 }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#475569")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
                 แก้ไข
@@ -185,7 +186,7 @@ function ChannelGroupCard({ channel, entries, align, onEdit, onRemove, width }: 
                 onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")} onMouseLeave={e => (e.currentTarget.style.color = "#94a3b8")}>
                 ลบ
               </button>
-            </div>
+            </div>}
           </div>
         );
       })}
@@ -348,7 +349,8 @@ function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Timeline({ entries, onChange, projectName, campaigns = [], adOptions = [] }: {
+export default function Timeline({ entries, onChange, projectName, campaigns = [], adOptions = [], readOnly = false }: {
+  readOnly?: boolean;
   entries: TimelineEntry[]; onChange: (entries: TimelineEntry[]) => void; projectName?: string;
   campaigns?: { id: string; name: string; platform: string }[];
   adOptions?: { id: string; name: string; image: string }[];
@@ -446,6 +448,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
+        {!readOnly && (<>
         <button onClick={startAdd}
           style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
           + เพิ่มเหตุการณ์
@@ -475,7 +478,9 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
         <button onClick={downloadCsvTemplate} title="ดาวน์โหลดไฟล์ตัวอย่างสำหรับ Import"
           style={{ background: "none", color: "#2563eb", border: "none", fontSize: 11, cursor: "pointer", padding: "0 2px" }}>ไฟล์ตัวอย่าง</button>
 
-        <div style={{ width: 1, height: 20, background: "#e5e7eb", margin: "0 4px" }} />
+        </>)}
+
+        {!readOnly && <div style={{ width: 1, height: 20, background: "#e5e7eb", margin: "0 4px" }} />}
 
         <label style={{ fontSize: 11, color: "#64748b" }}>จาก</label>
         <input type="date" value={filterFrom} max={filterTo || undefined} onChange={e => setFilterFrom(e.target.value)}
@@ -722,7 +727,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             <div style={{ textAlign: "center", color: "#9ca3af", padding: 60, fontSize: 14 }}>
               {hasFilter
                 ? "ไม่มีเหตุการณ์ในช่วงเวลาที่เลือก"
-                : <>ยังไม่มีเหตุการณ์ — กด <strong>+ เพิ่มเหตุการณ์</strong> เพื่อเริ่มบันทึก Timeline</>}
+                : readOnly ? "ยังไม่มีเหตุการณ์" : <>ยังไม่มีเหตุการณ์ — กด <strong>+ เพิ่มเหตุการณ์</strong> เพื่อเริ่มบันทึก Timeline</>}
             </div>
           </div>
         ) : layout === "vertical" ? (
@@ -740,7 +745,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
                     {groupByChannel(group.entries).map(cg => (
                       <ChannelGroupCard key={cg.channel + cg.entries[0].id} channel={cg.channel} entries={cg.entries} align="left"
-                        onEdit={startEdit} onRemove={removeEntry} width={240} />
+                        onEdit={startEdit} onRemove={removeEntry} width={240} readOnly={readOnly} />
                     ))}
                   </div>
                 </div>
@@ -774,7 +779,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                     {groupByChannel(group.entries).map(cg => (
                       <ChannelGroupCard key={cg.channel + cg.entries[0].id} channel={cg.channel} entries={cg.entries} align="center"
-                        onEdit={startEdit} onRemove={removeEntry} width="100%" />
+                        onEdit={startEdit} onRemove={removeEntry} width="100%" readOnly={readOnly} />
                     ))}
                   </div>
                 </div>

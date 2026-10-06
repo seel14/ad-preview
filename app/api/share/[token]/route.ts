@@ -13,6 +13,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     projectName: rec.projectName,
     scope: rec.scope,
     includeTarget: !!rec.includeTarget,
+    includeTimeline: !!rec.includeTimeline,
+    timeline: rec.includeTimeline ? (rec.base.timeline ?? []) : [],
     targets: rec.includeTarget ? (rec.base.targets ?? []) : [],
     status: rec.status,
     clientName: rec.clientName ?? "",

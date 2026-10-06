@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import AdsStructure, { type StructureNode } from "../../components/AdsStructure";
 import { TargetSlide } from "../../components/TargetView";
+import Timeline, { type TimelineEntry } from "../../components/Timeline";
 import type { AdsetTarget } from "@/lib/targets";
 import { normalizeCreative, type RawCreative } from "@/lib/normalizeCreative";
 
@@ -21,6 +22,8 @@ interface ShareData {
   scope: "both" | "preview" | "structure" | "none";
   includeTarget: boolean;
   targets: AdsetTarget[];
+  includeTimeline: boolean;
+  timeline: TimelineEntry[];
   status: "idle" | "pending";
   clientName: string;
   ads: ShareAd[];
@@ -223,7 +226,7 @@ export default function SharePage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<ShareData | null>(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"preview" | "structure" | "target">("preview");
+  const [tab, setTab] = useState<"preview" | "structure" | "target" | "timeline">("preview");
   const [targetIdx, setTargetIdx] = useState(0);
   const [vw, setVw] = useState(1200);
   const [structure, setStructure] = useState<StructureNode[]>([]);
@@ -246,7 +249,7 @@ export default function SharePage() {
         setStructure(d.structure);
         setAdEdits(d.adEdits ?? {});
         setClientName(d.clientName ?? "");
-        setTab(d.scope === "both" || d.scope === "preview" ? "preview" : d.scope === "structure" ? "structure" : "target");
+        setTab(d.scope === "both" || d.scope === "preview" ? "preview" : d.scope === "structure" ? "structure" : d.includeTarget && d.targets.length ? "target" : "timeline");
         setView(window.innerWidth < 768 ? "list" : "chart");
         setPlatformId(d.structure[0]?.id ?? "");
         setInitial(JSON.stringify([d.structure, d.adEdits ?? {}]));
@@ -304,10 +307,12 @@ export default function SharePage() {
   const showPreview = data.scope === "both" || data.scope === "preview";
   const showStructure = data.scope === "both" || data.scope === "structure";
   const showTarget = data.includeTarget && data.targets.length > 0;
+  const showTimeline = data.includeTimeline && data.timeline.length > 0;
   const tabs = [
     ...(showPreview ? [["preview", "Ad Preview"] as const] : []),
     ...(showStructure ? [["structure", "Ad Structure"] as const] : []),
     ...(showTarget ? [["target", "Target"] as const] : []),
+    ...(showTimeline ? [["timeline", "Timeline"] as const] : []),
   ];
   const editable = showPreview || showStructure;
   const slideScale = Math.min(1, (vw - 32) / 960);
@@ -347,6 +352,12 @@ export default function SharePage() {
                     onEdit={e => setAdEdits(prev => { const n = { ...prev }; if (e) n[ad.id] = e; else delete n[ad.id]; return n; })} />
                 ))}
               </div>
+        )}
+
+        {tab === "timeline" && showTimeline && (
+          <div className="rounded-xl border border-slate-200 overflow-hidden bg-white" style={{ height: "calc(100vh - 170px)", minHeight: 420 }}>
+            <Timeline entries={data.timeline} onChange={() => {}} readOnly />
+          </div>
         )}
 
         {tab === "target" && showTarget && (

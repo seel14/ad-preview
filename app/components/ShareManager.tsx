@@ -16,6 +16,7 @@ interface ShareSummary {
   projectName: string;
   scope: "both" | "preview" | "structure" | "none";
   includeTarget: boolean;
+  includeTimeline: boolean;
   createdAt: number;
   updatedAt: number;
   status: "idle" | "pending";
@@ -23,11 +24,12 @@ interface ShareSummary {
   changes: ShareChange[];
 }
 
-const scopeLabel = (scope: string, target: boolean) => {
+const scopeLabel = (scope: string, target: boolean, timeline: boolean) => {
   const parts = [
     ...(scope === "both" || scope === "preview" ? ["Ad Preview"] : []),
     ...(scope === "both" || scope === "structure" ? ["Ad Structure"] : []),
     ...(target ? ["Target"] : []),
+    ...(timeline ? ["Timeline"] : []),
   ];
   return parts.join(" + ") || "-";
 };
@@ -150,7 +152,8 @@ function ChangeLine({ c }: { c: ShareChange }) {
   );
 }
 
-export default function ShareManager({ project, ads, structure, targets, onApplied }: {
+export default function ShareManager({ project, ads, structure, targets, timelineCount, onApplied }: {
+  timelineCount: number;
   project: { id: string; name: string } | null;
   ads: unknown[];
   structure: unknown[];
@@ -162,6 +165,7 @@ export default function ShareManager({ project, ads, structure, targets, onAppli
   const [partPreview, setPartPreview] = useState(true);
   const [partStructure, setPartStructure] = useState(true);
   const [partTarget, setPartTarget] = useState(false);
+  const [partTimeline, setPartTimeline] = useState(false);
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
   const [copied, setCopied] = useState("");
@@ -210,6 +214,7 @@ export default function ShareManager({ project, ads, structure, targets, onAppli
           projectId: project.id,
           scope: partPreview && partStructure ? "both" : partPreview ? "preview" : partStructure ? "structure" : "none",
           includeTarget: partTarget,
+          includeTimeline: partTimeline,
           ads,
           targets: partTarget ? targets : undefined,
         }),
@@ -250,7 +255,7 @@ export default function ShareManager({ project, ads, structure, targets, onAppli
     <div key={s.token} style={{ border: s.status === "pending" ? "1.5px solid #f59e0b" : "1px solid #e2e8f0", background: s.status === "pending" ? "#fffbeb" : "#fff", borderRadius: 10, padding: 12, marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.projectName} <span style={{ fontWeight: 500, color: "#64748b" }}>· {scopeLabel(s.scope, s.includeTarget)}</span></div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.projectName} <span style={{ fontWeight: 500, color: "#64748b" }}>· {scopeLabel(s.scope, s.includeTarget, s.includeTimeline)}</span></div>
           <div style={{ fontSize: 10, color: "#94a3b8" }}>สร้าง {new Date(s.createdAt).toLocaleString("th-TH")}{s.clientName ? ` · แก้ไขโดย ${s.clientName}` : ""}</div>
         </div>
         {s.status === "pending" && <span style={{ background: "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 9999, flexShrink: 0 }}>รอตรวจสอบ</span>}
@@ -322,6 +327,7 @@ export default function ShareManager({ project, ads, structure, targets, onAppli
                     ["Ad Preview", partPreview, setPartPreview, "แก้ข้อความได้"],
                     ["Ad Structure", partStructure, setPartStructure, "แก้ไขได้"],
                     ["Target", partTarget, setPartTarget, "ดูอย่างเดียว"],
+                    ["Timeline", partTimeline, setPartTimeline, "ดูอย่างเดียว"],
                   ] as const).map(([label, on, set, note]) => (
                     <button key={label} onClick={() => set(!on)} className="cursor-pointer"
                       style={{ fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 8, border: on ? "1.5px solid #2563eb" : "1.5px solid #e2e8f0", background: on ? "#eff6ff" : "#fff", color: on ? "#1e40af" : "#64748b" }}>
@@ -331,8 +337,9 @@ export default function ShareManager({ project, ads, structure, targets, onAppli
                 </div>
                 {partPreview && ads.length === 0 && <div style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>ยังไม่ได้โหลด Ads — โหลดที่แท็บ Ad Preview ก่อน ลูกค้าจะได้เห็นโฆษณา</div>}
                 {partStructure && structure.length === 0 && <div style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>Project นี้ยังไม่มี Ad Structure</div>}
+                {partTimeline && timelineCount === 0 && <div style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>ยังไม่มีเหตุการณ์ใน Timeline</div>}
                 {partTarget && targets.length === 0 && <div style={{ fontSize: 11, color: "#b45309", marginBottom: 8 }}>ยังไม่ได้ดึง Target — ไปที่แท็บ Target ก่อน</div>}
-                <button onClick={create} disabled={busy === "create" || (!partPreview && !partStructure && !partTarget)} className="cursor-pointer font-semibold"
+                <button onClick={create} disabled={busy === "create" || (!partPreview && !partStructure && !partTarget && !partTimeline)} className="cursor-pointer font-semibold"
                   style={{ fontSize: 12, padding: "7px 16px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff" }}>
                   {busy === "create" ? "กำลังสร้าง..." : "สร้างลิงก์และคัดลอก"}
                 </button>

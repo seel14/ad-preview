@@ -27,8 +27,9 @@ export interface ShareRecord {
   projectName: string;
   scope: ShareScope;
   includeTarget?: boolean;
+  includeTimeline?: boolean;
   createdAt: number;
-  base: { structure: StructureNode[]; ads: ShareAd[]; adEdits: AdEdits; targets?: unknown[] };
+  base: { structure: StructureNode[]; ads: ShareAd[]; adEdits: AdEdits; targets?: unknown[]; timeline?: unknown[] };
   draft?: { structure: StructureNode[]; adEdits: AdEdits };
   changes: ShareChange[];
   status: "idle" | "pending";
@@ -178,6 +179,7 @@ export async function acceptShare(rec: ShareRecord): Promise<boolean> {
     ads: rec.base.ads.map(ad => applyEditToAd(ad, rec.draft!.adEdits[ad.id])),
     adEdits: {},
     targets: rec.base.targets,
+    timeline: rec.base.timeline,
   };
   rec.draft = undefined;
   rec.changes = [];

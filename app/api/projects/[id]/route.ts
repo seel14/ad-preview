@@ -25,6 +25,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.cachedAds !== undefined) projects[idx].cachedAds = body.cachedAds;
   if (body.cachedTargets !== undefined) projects[idx].cachedTargets = body.cachedTargets;
   if (typeof body.fbAccountId === "string") projects[idx].fbAccountId = body.fbAccountId;
+  if (Array.isArray(body.customAds)) projects[idx].customAds = body.customAds;
   projects[idx].updatedAt = Date.now();
 
   await saveProjects(session.user.partitionKey, projects);

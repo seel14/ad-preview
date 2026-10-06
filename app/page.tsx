@@ -8,6 +8,7 @@ import AdsStructure, { type StructureNode } from "./components/AdsStructure";
 import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
+import CustomAdsModal, { type CustomAd } from "./components/CustomAdsModal";
 import { normalizeCreative } from "@/lib/normalizeCreative";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
@@ -36,6 +37,20 @@ interface AdData {
   shareLink?: string | null;
   albumImages?: string[];
   page?: { name: string; picture: string } | null;
+}
+
+// Manually added ads (uploaded image + typed name) are shown alongside Facebook-loaded ads.
+function customToAdData(list: CustomAd[]): AdData[] {
+  return list.map(c => ({
+    id: `custom-${c.id}`,
+    name: c.name,
+    status: "CUSTOM",
+    campaign: "",
+    adset: "",
+    creative: { image_url: c.image, body: c.caption, title: c.headline },
+    previewHtml: null,
+    shareLink: c.link || null,
+  }));
 }
 
 type Tab = "preview" | "structure" | "timeline" | "target";
@@ -322,6 +337,7 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
   const [listModalId, setListModalId] = useState<string | null>(null);
   const [listAddText, setListAddText] = useState("");
   const [listQuery, setListQuery] = useState("");
@@ -390,7 +406,7 @@ export default function Home() {
   useEffect(() => {
     setToken(currentProject?.token ?? "");
     setAdIdsInput(currentProject?.adIds.join("\n") ?? "");
-    setAds((currentProject?.cachedAds as AdData[] | undefined) ?? []);
+    setAds([...((currentProject?.cachedAds as AdData[] | undefined) ?? []), ...customToAdData(currentProject?.customAds ?? [])]);
     setTargets((currentProject?.cachedTargets as AdsetTarget[] | undefined) ?? []);
     setTargetIndex(0);
     setTargetError("");
@@ -528,13 +544,18 @@ export default function Home() {
     setAds([]);
     setCurrentIndex(0);
     const results = await loadAdsForIds(lines, token, msg => setStatusMsg(msg));
-    setAds(results);
+    setAds([...results, ...customToAdData(currentProject?.customAds ?? [])]);
     setStatusMsg("");
     setLoading(false);
     await patchProject({ cachedAds: results });
   }
 
   // Save current ad IDs as a named list (update existing or create new, deduplicate)
+  async function saveCustomAds(next: CustomAd[]) {
+    setAds(prev => [...prev.filter(a => !a.id.startsWith("custom-")), ...customToAdData(next)]);
+    await patchProject({ customAds: next });
+  }
+
   async function handleSaveList() {
     if (!currentId) return;
     const ids = adIdsInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
@@ -1506,6 +1527,15 @@ export default function Home() {
                 )}
               </button>
 
+              {/* Manually added ads */}
+              <button onClick={() => setCustomOpen(true)}
+                className="w-full flex items-center justify-between rounded-lg cursor-pointer transition-colors duration-150"
+                style={{ padding: "8px 10px", border: "1.5px dashed #cbd5e1", background: "#f8fafc", color: "#475569", fontSize: 11, fontWeight: 600 }}
+                title="อัปโหลดรูปและตั้งชื่อ Ad เอง สำหรับ Google, TikTok, LINE ที่ยังไม่มี API">
+                <span>+ เพิ่ม Ad เอง (อัปโหลดรูป)</span>
+                {(currentProject?.customAds?.length ?? 0) > 0 && <span style={{ color: "#2563eb" }}>{currentProject?.customAds?.length} รายการ</span>}
+              </button>
+
               {/* Saved Lists */}
               {savedLists.length > 0 && (
                 <div>
@@ -1836,6 +1866,9 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {customOpen && currentProject && (
+        <CustomAdsModal ads={currentProject.customAds ?? []} onChange={saveCustomAds} onClose={() => setCustomOpen(false)} />
+      )}
       {listModalId && (() => {
         const list = savedLists.find(l => l.id === listModalId);
         if (!list) return null;

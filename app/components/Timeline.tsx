@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toThumbDataUrl } from "@/lib/imageUtil";
 import { MATCH_ORDER, MATCH_STYLE, formatKeyword, groupedKeywords, parseKeywordLine, uniqueKeywords, type Keyword, type MatchType } from "@/lib/keywords";
 
 export interface TimelineImage { src: string; name?: string; adId?: string }
@@ -99,24 +100,6 @@ function DetailsList({ details, campaign, channel, align = "left" }: { details?:
 }
 
 const IMAGE_CHANNELS = ["Facebook", "TikTok"];
-
-// Shrinks an image (file or remote URL, fetched through the same-origin proxy) to a small JPEG data URL so it
-// can be stored with the event and never expires like Facebook CDN links do.
-async function toThumbDataUrl(source: File | string, maxSide = 360): Promise<string> {
-  const blob = typeof source === "string"
-    ? await (await fetch(`/api/proxy?url=${encodeURIComponent(source)}`)).blob()
-    : source;
-  const bitmap = await createImageBitmap(blob);
-  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.82);
-}
 
 function ImageStrip({ images, align }: { images?: TimelineImage[]; align: "left" | "center" }) {
   if (!images?.length) return null;

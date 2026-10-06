@@ -46,6 +46,7 @@ function statusColor(status: string) {
 }
 
 function proxyUrl(url: string) {
+  if (url.startsWith("data:")) return url;
   return `/api/proxy?url=${encodeURIComponent(url)}`;
 }
 

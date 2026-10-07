@@ -9,6 +9,7 @@ import Timeline, { type TimelineEntry } from "./components/Timeline";
 import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
 import CustomAdsModal, { type CustomAd } from "./components/CustomAdsModal";
+import ConnectionsModal, { type ConnectionInfo } from "./components/ConnectionsModal";
 import { normalizeCreative } from "@/lib/normalizeCreative";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
@@ -307,18 +308,18 @@ export default function Home() {
     } catch { /* storage blocked — skip auto-open */ }
   }, [status]);
 
+
+  const {
+    projects, currentId, setCurrentId, currentProject, projectsLoading, storageError, saveState,
+    newProject, deleteProject, renameProject, patchProject, persistTokenAndAdIds, reloadProjects,
+  } = useProjectPersistence(status);
   const {
     fbConnected, fbAdAccounts, fbSelectedAccount, setFbSelectedAccount, fbAds, fbCampaigns,
     fbCampaignFilter, setFbCampaignFilter, fbAccountSearch, setFbAccountSearch,
     fbCampaignSearch, setFbCampaignSearch, fbStatusFilter, setFbStatusFilter,
     fbAdsLoading, fbSidebarOpen, setFbSidebarOpen,
     connect: handleFbConnect, disconnect: handleFbDisconnect,
-  } = useFacebookBrowser(status);
-
-  const {
-    projects, currentId, setCurrentId, currentProject, projectsLoading, storageError, saveState,
-    newProject, deleteProject, renameProject, patchProject, persistTokenAndAdIds, reloadProjects,
-  } = useProjectPersistence(status);
+  } = useFacebookBrowser(status, currentProject?.connectionId ?? null);
 
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
@@ -337,6 +338,13 @@ export default function Home() {
   const [activePlatformId, setActivePlatformId] = useState<string>("");
   const [cover, setCover] = useState<CoverStyle>(DEFAULT_COVER);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [connections, setConnections] = useState<ConnectionInfo[]>([]);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const connectionId = currentProject?.connectionId && connections.some(c => c.id === currentProject.connectionId) ? currentProject.connectionId : "";
+  // Either a saved Connection (token kept on the server) or a token pasted into the project.
+  const hasAuth = !!connectionId || !!token.trim();
+  const authQuery = connectionId ? `connectionId=${encodeURIComponent(connectionId)}` : `token=${encodeURIComponent(token.trim())}`;
+  const authBody = connectionId ? { connectionId } : { token: token.trim() };
   const [customOpen, setCustomOpen] = useState(false);
   const [listModalId, setListModalId] = useState<string | null>(null);
   const [listAddText, setListAddText] = useState("");
@@ -426,6 +434,11 @@ export default function Home() {
     for (const a of ads) if (a.status !== "ERROR" && a.name && !a.id.startsWith("link-")) add[a.id] = a.name;
     if (Object.keys(add).length) setAdNameCache(prev => ({ ...prev, ...add }));
   }, [ads]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch("/api/connections").then(r => (r.ok ? r.json() : [])).then(d => Array.isArray(d) && setConnections(d)).catch(() => {});
+  }, [status]);
 
   // Each Project remembers its own ad account: switching Project (or connecting Facebook) re-selects it.
   useEffect(() => {
@@ -517,7 +530,7 @@ export default function Home() {
       while (next < adIds.length) {
         const i = next++;
         try {
-          const res = await fetch(`/api/ads?adId=${adIds[i]}&token=${encodeURIComponent(tok.trim())}`);
+          const res = await fetch(`/api/ads?adId=${adIds[i]}&${authQuery}`);
           const data = await res.json();
           loaded[i] = data.error
             ? { id: adIds[i], name: `❌ ${data.error}`, status: "ERROR", campaign: "", adset: "", creative: {}, previewHtml: null }
@@ -541,7 +554,7 @@ export default function Home() {
 
     // Require token only if there are real ad IDs (non-URL lines) to fetch
     const hasRealIds = lines.some(s => !/^https?:\/\//i.test(s));
-    if (hasRealIds && !token.trim()) return;
+    if (hasRealIds && !hasAuth) return;
 
     setLoading(true);
     setAds([]);
@@ -889,7 +902,7 @@ export default function Home() {
   // Exports the checked Saved Lists as one combined PDF, with a divider page between each list's ads.
   async function handleExportCombinedLists() {
     const lists = savedLists.filter(l => selectedListIds.has(l.id));
-    if (!lists.length || !token.trim()) return;
+    if (!lists.length || !hasAuth) return;
 
     setCombineExporting(true);
     setExportMode(true);
@@ -920,7 +933,7 @@ export default function Home() {
   // One PDF with each selected Saved List laid out as a grid (GRID_COLS ads per page) with share links under each ad.
   async function handleExportGridLists() {
     const lists = savedLists.filter(l => selectedListIds.has(l.id));
-    if (!lists.length || !token.trim()) return;
+    if (!lists.length || !hasAuth) return;
     setCombineExporting(true);
     setExportMode(true);
     try {
@@ -960,7 +973,7 @@ export default function Home() {
     try {
       const body = pickerSource === "account"
         ? { source: "account", accountId: fbSelectedAccount }
-        : { source: "loaded", token: token.trim(), adIds: targetAdIds };
+        : { source: "loaded", ...authBody, adIds: targetAdIds };
       const r = await fetch("/api/targets/list", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error ?? "โหลดรายการ Ad Set ไม่สำเร็จ");
@@ -1026,7 +1039,7 @@ export default function Home() {
         body: JSON.stringify({
           adsetIds: toFetch.map(o => o.id),
           adIdsByAdset: Object.fromEntries(toFetch.map(o => [o.id, o.adIds])),
-          ...(pickerSource === "account" ? { useStored: true } : { token: token.trim() }),
+          ...(pickerSource === "account" ? (connectionId ? { connectionId } : { useStored: true }) : authBody),
         }),
       });
       const data: AdsetTarget[] = await r.json();
@@ -1084,7 +1097,7 @@ export default function Home() {
     const partLabel: Record<string, string> = { ads: "Ads Preview", folders: "Ads Grid", structure: "Structure", timeline: "Timeline", target: "Target" };
     const parts = dlgOrder.filter(k => active[k]).map(k => partLabel[k]);
     if (parts.length === 0 && !cover.enabled) return;
-    if (lists.length && !token.trim()) { alert("ต้องมี Token เพื่อโหลด Ads ใน Folder"); return; }
+    if (lists.length && !hasAuth) { alert("ต้องมี Token หรือเลือก Connection เพื่อโหลด Ads ใน Folder"); return; }
 
     setDlgOpen(false);
     setCombineExporting(true);
@@ -1379,6 +1392,7 @@ export default function Home() {
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session?.user?.name}</div>
                     <div style={{ fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session?.user?.email}</div>
                   </div>
+                  <button onClick={() => { setUserMenuOpen(false); setConnectionsOpen(true); }} className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">Connections (Facebook Token)</button>
                   <button onClick={() => signOut()} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 cursor-pointer">ออกจากระบบ</button>
                 </div>
               </>
@@ -1467,13 +1481,25 @@ export default function Home() {
               {/* Token */}
               <div>
                 <div className="flex items-center mb-1.5">
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "#334155" }}>Access Token</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "#334155" }}>Facebook Token</label>
                   <TokenGuide />
                   <div className="flex-1" />
                   {saveState === "saving" && <span style={{ fontSize: 10, color: "#94a3b8" }}>บันทึก...</span>}
                   {saveState === "saved" && <span style={{ fontSize: 10, color: "#16a34a" }}>✓ บันทึกแล้ว</span>}
                 </div>
-                <div className="relative">
+                <select value={connectionId}
+                  onChange={e => { if (e.target.value === "__manage") { setConnectionsOpen(true); return; } patchProject({ connectionId: e.target.value }); }}
+                  style={{ width: "100%", marginBottom: 6, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 10px", background: connectionId ? "#eff6ff" : "#f8fafc", color: connectionId ? "#1e40af" : "#475569", fontWeight: connectionId ? 600 : 400 }}>
+                  <option value="">ใส่ Token เอง (ช่องด้านล่าง)</option>
+                  {connections.map(c => <option key={c.id} value={c.id}>Connection: {c.name}</option>)}
+                  <option value="__manage">＋ จัดการ Connections…</option>
+                </select>
+                {connectionId && (
+                  <div style={{ fontSize: 10, color: "#64748b", lineHeight: 1.5 }}>
+                    ใช้ Token ที่เก็บไว้ใน Connection นี้ ({connections.find(c => c.id === connectionId)?.identity}) — ไม่ต้องกรอก Token ซ้ำ
+                  </div>
+                )}
+                {!connectionId && <div className="relative">
                   <input type={showToken ? "text" : "password"} value={token} onChange={e => onTokenChange(e.target.value)} placeholder="EAAj..."
                     className="w-full focus:outline-none transition-all duration-150"
                     style={{ fontSize: 12, color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 32px 8px 10px", background: "#f8fafc" }}
@@ -1496,9 +1522,8 @@ export default function Home() {
                       </svg>
                     )}
                   </button>
-                </div>
+                </div>}
               </div>
-
               {/* Ad IDs */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1758,7 +1783,7 @@ export default function Home() {
                 loading={targetLoading} error={targetError}
                 picker={{
                   source: pickerSource, onSourceChange: setPickerSource, loadedCount: targetAdIds.length, accountLabel: fbAccountLabel,
-                  canLoadLoaded: !!token.trim() && targetAdIds.length > 0, options: adsetOptions, selected: adsetSel, onSelectedChange: setAdsetSel,
+                  canLoadLoaded: hasAuth && targetAdIds.length > 0, options: adsetOptions, selected: adsetSel, onSelectedChange: setAdsetSel,
                   onLoadList: loadAdsetList, listLoading: adsetListLoading, onFetch: fetchTargets, fetching: targetLoading, savedIds: savedTargetIds,
                 }}
                 savedIds={savedTargetIds} onToggleSave={toggleSaveTarget} onSaveAll={saveAllTargets} onRemove={removeTarget} onClearUnsaved={clearUnsavedTargets}
@@ -1916,6 +1941,10 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {connectionsOpen && (
+        <ConnectionsModal connections={connections} onChange={setConnections} onClose={() => setConnectionsOpen(false)}
+          usage={projects.reduce<Record<string, string[]>>((acc, p) => { if (p.connectionId) (acc[p.connectionId] ??= []).push(p.name); return acc; }, {})} />
+      )}
       {customOpen && currentProject && (
         <CustomAdsModal ads={currentProject.customAds ?? []} onChange={saveCustomAds} onClose={() => setCustomOpen(false)} />
       )}

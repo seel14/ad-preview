@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { redis } from "@/lib/redis";
+import { resolveToken } from "@/lib/connections";
 import { FacebookApiError } from "@/lib/facebook";
 import { listAdsetsForAccount, listAdsetsForAds } from "@/lib/targets";
 
@@ -8,15 +7,14 @@ import { listAdsetsForAccount, listAdsetsForAds } from "@/lib/targets";
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   try {
+    const connectionId = typeof body?.connectionId === "string" ? body.connectionId : null;
     if (body?.source === "account") {
-      const session = await auth();
-      if (!session?.user?.partitionKey || !redis) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-      const token = await redis.get<string>(`fb_token:${session.user.partitionKey}`);
-      if (!token) return NextResponse.json({ error: "ยังไม่ได้เชื่อมต่อ Facebook" }, { status: 401 });
+      const token = await resolveToken(connectionId ? { connectionId } : { useStored: true }).catch(() => "");
+      if (!token) return NextResponse.json({ error: "ยังไม่ได้เชื่อมต่อ Facebook หรือเลือก Connection" }, { status: 401 });
       if (typeof body.accountId !== "string" || !body.accountId) return NextResponse.json({ error: "accountId required" }, { status: 400 });
       return NextResponse.json(await listAdsetsForAccount(body.accountId, token));
     }
-    const token = typeof body?.token === "string" ? body.token.trim() : "";
+    const token = await resolveToken({ token: body?.token, connectionId }).catch(() => "");
     const adIds: string[] = Array.isArray(body?.adIds) ? body.adIds.filter((x: unknown) => typeof x === "string" && /^\d+$/.test(x)) : [];
     if (!token || !adIds.length) return NextResponse.json({ error: "token and adIds required" }, { status: 400 });
     return NextResponse.json(await listAdsetsForAds(adIds, token));

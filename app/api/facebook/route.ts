@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { redis } from "@/lib/redis";
-import { getAdAccounts } from "@/lib/facebook";
+import { getAdAccounts, getAssignedAdAccounts } from "@/lib/facebook";
+import { resolveToken } from "@/lib/connections";
 
 // GET /api/facebook — returns { connected, adAccounts }
-export async function GET() {
+export async function GET(req: Request) {
+  const connectionId = new URL(req.url).searchParams.get("connectionId");
   const session = await auth();
   if (!session?.user?.partitionKey) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  if (connectionId) {
+    try {
+      const ctoken = await resolveToken({ connectionId });
+      let adAccounts = await getAdAccounts(ctoken).catch(() => []);
+      if (!adAccounts.length) adAccounts = await getAssignedAdAccounts(ctoken).catch(() => []);
+      return NextResponse.json({ connected: true, adAccounts });
+    } catch {
+      return NextResponse.json({ connected: false, error: "connection_failed" });
+    }
+  }
 
   if (!redis) return NextResponse.json({ connected: false });
 

@@ -96,6 +96,13 @@ export async function getAdAccounts(token: string): Promise<AdAccount[]> {
   );
 }
 
+// System Users often only see accounts through the "assigned" edge.
+export async function getAssignedAdAccounts(token: string): Promise<AdAccount[]> {
+  return graphFetchAllPages<AdAccount>(
+    `${BASE}/me/assigned_ad_accounts?fields=id,name,account_id,account_status,currency&limit=100&access_token=${token}`
+  );
+}
+
 export async function getAds(
   accountId: string,
   token: string,

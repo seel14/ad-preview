@@ -28,7 +28,7 @@ export interface FbCampaign {
 // the account/campaign/status filters, and the resulting ad list. `authStatus` is the
 // NextAuth session status ("authenticated" | ...) — the only thing this hook needs
 // from outside itself to know when it's safe to check the Facebook connection.
-export function useFacebookBrowser(authStatus: string) {
+export function useFacebookBrowser(authStatus: string, connectionId: string | null = null) {
   const [fbConnected, setFbConnected] = useState(false);
   const [fbAdAccounts, setFbAdAccounts] = useState<FbAdAccount[]>([]);
   const [fbSelectedAccount, setFbSelectedAccount] = useState<string>("");
@@ -48,7 +48,9 @@ export function useFacebookBrowser(authStatus: string) {
     if (params.get("fb_connected") === "1") {
       window.history.replaceState({}, "", window.location.pathname);
     }
-    fetch("/api/facebook")
+    setFbSelectedAccount("");
+    setFbAdAccounts([]);
+    fetch(`/api/facebook${connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : ""}`)
       .then(r => r.json())
       .then(data => {
         setFbConnected(data.connected ?? false);
@@ -57,7 +59,7 @@ export function useFacebookBrowser(authStatus: string) {
           setFbSelectedAccount(data.adAccounts[0].id);
         }
       });
-  }, [authStatus]);
+  }, [authStatus, connectionId]);
 
   useEffect(() => {
     if (!fbSelectedAccount) { setFbAds([]); setFbCampaigns([]); return; }
@@ -65,6 +67,7 @@ export function useFacebookBrowser(authStatus: string) {
     const params = new URLSearchParams({ accountId: fbSelectedAccount });
     if (fbCampaignFilter) params.set("campaign", fbCampaignFilter);
     if (fbStatusFilter) params.set("status", fbStatusFilter);
+    if (connectionId) params.set("connectionId", connectionId);
     fetch(`/api/facebook/ads?${params.toString()}`)
       .then(r => r.json())
       .then(data => {
@@ -72,7 +75,7 @@ export function useFacebookBrowser(authStatus: string) {
         setFbCampaigns(data.campaigns ?? []);
       })
       .finally(() => setFbAdsLoading(false));
-  }, [fbSelectedAccount, fbCampaignFilter, fbStatusFilter]);
+  }, [fbSelectedAccount, fbCampaignFilter, fbStatusFilter, connectionId]);
 
   function connect() {
     window.location.href = "/api/auth/facebook";

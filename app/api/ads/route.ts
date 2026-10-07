@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAdPreview, FacebookApiError } from "@/lib/facebook";
+import { resolveToken } from "@/lib/connections";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const adId = searchParams.get("adId");
-  const token = searchParams.get("token");
+  const connectionId = searchParams.get("connectionId");
+  let token: string | null = searchParams.get("token");
+  if (connectionId) {
+    try { token = await resolveToken({ connectionId }); } catch { return NextResponse.json({ error: "ใช้ Connection ไม่ได้ (ยังไม่ได้ล็อกอินหรือถูกลบแล้ว)" }, { status: 401 }); }
+  }
 
   if (!adId || !token) return NextResponse.json({ error: "adId and token required" }, { status: 400 });
 

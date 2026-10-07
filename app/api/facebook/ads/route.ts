@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { redis } from "@/lib/redis";
 import { getAds, FacebookApiError } from "@/lib/facebook";
+import { resolveToken } from "@/lib/connections";
 
 // GET /api/facebook/ads?accountId=act_xxx&campaign=xxx&status=ACTIVE
 export async function GET(req: Request) {
@@ -10,10 +11,13 @@ export async function GET(req: Request) {
 
   if (!redis) return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
 
-  const token = await redis.get<string>(`fb_token:${session.user.partitionKey}`);
+  const { searchParams } = new URL(req.url);
+  const connectionId = searchParams.get("connectionId");
+  const token = connectionId
+    ? await resolveToken({ connectionId }).catch(() => "")
+    : await redis.get<string>(`fb_token:${session.user.partitionKey}`);
   if (!token) return NextResponse.json({ error: "not_connected" }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("accountId");
   const campaignId = searchParams.get("campaign") ?? undefined;
   const status = searchParams.get("status") ?? undefined;

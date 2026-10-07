@@ -739,13 +739,13 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
-export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false }: {
+export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false, autoFitMin = 0.25 }: {
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
   loadedAds: AdData[];
   savedLists?: { id: string; name: string; adIds: string[]; createdAt: number }[];
   onExport: (ids: string[], format: "png" | "pdf") => void; exporting: boolean;
   activePlatformId?: string | null; onActivePlatformChange?: (id: string) => void;
-  hideExport?: boolean; autoFit?: boolean;
+  hideExport?: boolean; autoFit?: boolean; autoFitMin?: number;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -762,7 +762,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
     const t = setTimeout(() => {
       const sc = scrollRef.current;
       const ch = document.getElementById("structure-chart");
-      if (sc && ch && ch.offsetWidth > 0) setZoom(Math.max(0.25, Math.min(1, +((sc.clientWidth - 80) / ch.offsetWidth).toFixed(2))));
+      if (sc && ch && ch.offsetWidth > 0) setZoom(Math.max(autoFitMin, Math.min(1, +((sc.clientWidth - 80) / ch.offsetWidth).toFixed(2))));
     }, 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

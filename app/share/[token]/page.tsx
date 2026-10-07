@@ -337,6 +337,7 @@ export default function SharePage() {
   ];
   const editable = showPreview || showStructure;
   const mobile = vw < 768;
+  const effView = mobile ? "chart" : view; // the line-by-line list is desktop-only
   const slideScale = Math.min(1, (vw - 32) / 960);
 
   return (
@@ -406,19 +407,19 @@ export default function SharePage() {
           <>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <p className="text-xs text-slate-500">
-                {view === "chart" ? "คลิกที่ชื่อหรืองบเพื่อแก้ไข ลากเพื่อสลับตำแหน่ง ใช้ + และ ✕ เพิ่ม/ลบ" : "แก้ชื่อ งบ ลำดับ เพิ่มหรือลบรายการได้ตามต้องการ"} แล้วกดบันทึกด้านล่าง
+                {effView === "chart" ? "คลิกที่ชื่อหรืองบเพื่อแก้ไข ลากเพื่อสลับตำแหน่ง ใช้ + และ ✕ เพิ่ม/ลบ" : "แก้ชื่อ งบ ลำดับ เพิ่มหรือลบรายการได้ตามต้องการ"} แล้วกดบันทึกด้านล่าง
               </p>
-              <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {!mobile && <div className="flex bg-slate-100 rounded-lg p-0.5">
                 {([["chart", "แผนภาพ"], ["list", "รายการ"]] as const).map(([k, label]) => (
                   <button key={k} onClick={() => setView(k)}
                     className={`px-3 py-1 text-xs font-semibold rounded-md ${view === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>{label}</button>
                 ))}
-              </div>
+              </div>}
             </div>
-            {view === "chart" ? (
+            {effView === "chart" ? (
               <div className="rounded-xl border border-slate-200 overflow-hidden bg-white" style={{ height: "calc(100vh - 250px)", minHeight: 440 }}>
                 <AdsStructure nodes={structure} onChange={setStructure} loadedAds={data.ads as never} onExport={() => {}} exporting={false}
-                  activePlatformId={platformId} onActivePlatformChange={setPlatformId} hideExport autoFit />
+                  activePlatformId={platformId} onActivePlatformChange={setPlatformId} hideExport autoFit autoFitMin={mobile ? 0.5 : 0.25} />
               </div>
             ) : structure.length === 0 ? (
               <div className="text-center text-slate-400 py-16">ยังไม่มี Ad Structure</div>

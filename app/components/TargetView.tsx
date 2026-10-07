@@ -158,23 +158,23 @@ function LocationNames({ names, points, offset, tone }: { names: string[]; point
   );
 }
 
-function compact(n: number) {
+function compactNum(n: number) {
   if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
   return String(n);
 }
 
-export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Record<string, string> }) {
+export function TargetSlide({ item, adNames, compact = false, mapWidth = 264 }: { item: AdsetTarget; adNames: Record<string, string>; compact?: boolean; mapWidth?: number }) {
   const st = STATUS_COLOR[item.status] ?? { bg: "#e2e8f0", fg: "#475569" };
   const names = item.adIds.map(id => adNames[id]).filter(Boolean);
   const chipCount = [...item.detailed, ...item.excludedDetailed].reduce((n, g) => n + g.items.length, 0);
-  const dense = chipCount > 36;
+  const dense = !compact && chipCount > 36;
   return (
-    <div id="export-target-slide" style={{ width: SLIDE_W, minWidth: SLIDE_W, minHeight: SLIDE_H, flexShrink: 0, boxSizing: "border-box", background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-      <div style={{ padding: "22px 28px 14px", background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+    <div id="export-target-slide" style={{ width: compact ? "100%" : SLIDE_W, minWidth: compact ? 0 : SLIDE_W, minHeight: compact ? undefined : SLIDE_H, flexShrink: 0, boxSizing: "border-box", background: "#f8fafc", display: "flex", flexDirection: "column", fontFamily: "Helvetica, Arial, sans-serif", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+      <div style={{ padding: compact ? "14px 14px 10px" : "22px 28px 14px", background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: compact ? 8 : 16 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#2563eb", textTransform: "uppercase" }}>Ad Set Targeting</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", lineHeight: 1.25, marginTop: 2, wordBreak: "break-word" }}>{item.adsetName}</div>
+          <div style={{ fontSize: compact ? 18 : 26, fontWeight: 800, color: "#0f172a", lineHeight: 1.25, marginTop: 2, wordBreak: "break-word" }}>{item.adsetName}</div>
           <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
             {item.campaignName}{item.objective ? <> · <b style={{ color: "#334155" }}>{item.objective}</b></> : null}
           </div>
@@ -182,7 +182,7 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
         <span style={{ background: st.bg, color: st.fg, fontSize: 11, fontWeight: 800, padding: "3px 12px", borderRadius: 9999, flexShrink: 0 }}>{item.status || "-"}</span>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ flex: 1, minHeight: 0, padding: compact ? 10 : 18, display: "grid", gridTemplateColumns: compact ? "minmax(0,1fr)" : "1fr 1fr 1fr", gap: compact ? 10 : 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
           <Section title="Locations" grow>
             {(() => {
@@ -201,7 +201,7 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
                       <LocationNames names={item.excludedLocations} points={excludedPts} offset={included.length} tone="red" />
                     </div>
                   )}
-                  <LocationMap points={[...included, ...excludedPts]} width={264} height={150} />
+                  <LocationMap points={[...included, ...excludedPts]} width={mapWidth} height={compact ? 190 : 150} />
                   {pts.length > 0 && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 3 }}>แผนที่ใช้ประกอบการดูเท่านั้น ตำแหน่งอาจคลาดเคลื่อนเล็กน้อย</div>}
                 </>
               );
@@ -240,12 +240,12 @@ export function TargetSlide({ item, adNames }: { item: AdsetTarget; adNames: Rec
             {item.audienceSize ? (
               <>
                 <div style={{ fontSize: 30, fontWeight: 800, color: "#1e40af", lineHeight: 1.2 }}>
-                  {compact(item.audienceSize.lower)} – {compact(item.audienceSize.upper)}
+                  {compactNum(item.audienceSize.lower)} – {compactNum(item.audienceSize.upper)}
                 </div>
                 <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>จำนวนคนที่เข้าถึงได้โดยประมาณต่อเดือน (Potential reach)</div>
                 {item.audienceSize.daily != null && (
                   <div style={{ fontSize: 12, color: "#334155", marginTop: 8 }}>
-                    ประมาณการต่อวัน: <b>{compact(item.audienceSize.daily)}</b>
+                    ประมาณการต่อวัน: <b>{compactNum(item.audienceSize.daily)}</b>
                   </div>
                 )}
               </>

@@ -335,6 +335,7 @@ export default function SharePage() {
     ...(showTimeline ? [["timeline", "Timeline"] as const] : []),
   ];
   const editable = showPreview || showStructure;
+  const mobile = vw < 768;
   const slideScale = Math.min(1, (vw - 32) / 960);
 
   return (
@@ -346,10 +347,10 @@ export default function SharePage() {
             <h1 className="text-lg font-bold text-slate-900 truncate">{data.projectName}</h1>
           </div>
           {tabs.length > 1 && (
-            <div className="flex bg-slate-100 rounded-xl p-1 self-start sm:self-auto">
+            <div className="flex bg-slate-100 rounded-xl p-1 self-stretch sm:self-auto overflow-x-auto" style={{ scrollbarWidth: "none" }}>
               {tabs.map(([k, label]) => (
                 <button key={k} onClick={() => setTab(k)}
-                  className={`px-4 py-1.5 text-sm font-semibold rounded-lg ${tab === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>{label}</button>
+                  className={`flex-1 sm:flex-none whitespace-nowrap px-3 sm:px-4 py-2 sm:py-1.5 text-sm font-semibold rounded-lg ${tab === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>{label}</button>
               ))}
             </div>
           )}
@@ -375,8 +376,8 @@ export default function SharePage() {
         )}
 
         {tab === "timeline" && showTimeline && (
-          <div className="rounded-xl border border-slate-200 overflow-hidden bg-white" style={{ height: "calc(100vh - 170px)", minHeight: 420 }}>
-            <Timeline entries={data.timeline} onChange={() => {}} readOnly />
+          <div className="rounded-xl border border-slate-200 overflow-hidden bg-white" style={{ height: mobile ? "calc(100vh - 230px)" : "calc(100vh - 170px)", minHeight: 420 }}>
+            <Timeline entries={data.timeline} onChange={() => {}} readOnly compact={mobile} />
           </div>
         )}
 
@@ -390,9 +391,13 @@ export default function SharePage() {
                 {data.targets.map((t, i) => <option key={t.adsetId} value={i}>{t.adsetName}</option>)}
               </select>
             </div>
-            <ScaledSlide scale={slideScale}>
-              <TargetSlide item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
-            </ScaledSlide>
+            {mobile ? (
+              <TargetSlide compact mapWidth={Math.max(220, Math.min(560, vw - 56))} item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
+            ) : (
+              <ScaledSlide scale={slideScale}>
+                <TargetSlide item={data.targets[targetIdx]} adNames={Object.fromEntries(data.ads.map(a => [a.id, a.name]))} />
+              </ScaledSlide>
+            )}
           </>
         )}
 
@@ -425,7 +430,7 @@ export default function SharePage() {
         )}
       </div>
 
-      {editable && <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+      {editable && <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="ชื่อของคุณ (ไม่บังคับ)"
             className="sm:w-56 text-sm border border-slate-200 rounded-lg px-3 py-2" />

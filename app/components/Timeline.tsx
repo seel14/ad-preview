@@ -383,8 +383,9 @@ function exportTimelineCsv(entries: TimelineEntry[], projectName: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function Timeline({ entries, onChange, projectName, campaigns = [], adOptions = [], readOnly = false }: {
+export default function Timeline({ entries, onChange, projectName, campaigns = [], adOptions = [], readOnly = false, compact = false }: {
   readOnly?: boolean;
+  compact?: boolean; // phone-sized layout: vertical only, full-width cards, wrapping toolbar
   entries: TimelineEntry[]; onChange: (entries: TimelineEntry[]) => void; projectName?: string;
   campaigns?: { id: string; name: string; platform: string }[];
   adOptions?: { id: string; name: string; image: string }[];
@@ -397,7 +398,8 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
   const [campaignOther, setCampaignOther] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ date: "", channel: "", campaign: "", title: "", description: "", changes: [] as ChangeItem[], images: [] as TimelineImage[], keywords: [] as Keyword[] });
-  const [layout, setLayout] = useState<"vertical" | "horizontal">("horizontal");
+  const [layoutPref, setLayout] = useState<"vertical" | "horizontal">("horizontal");
+  const layout = compact ? "vertical" : layoutPref;
   const [filterFrom, setFilterFrom] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
@@ -478,7 +480,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: compact ? "10px 12px" : "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0, flexWrap: compact ? "wrap" : "nowrap" }}>
         {!readOnly && (<>
         <button onClick={startAdd}
           style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -528,7 +530,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
         )}
 
         <div style={{ flex: 1 }} />
-        <button onClick={() => setLayout(l => l === "vertical" ? "horizontal" : "vertical")}
+        {!compact && <button onClick={() => setLayout(l => l === "vertical" ? "horizontal" : "vertical")}
           title={layout === "vertical" ? "เปลี่ยนเป็นแนวนอน" : "เปลี่ยนเป็นแนวตั้ง"}
           style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 6, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
           {layout === "vertical" ? (
@@ -537,10 +539,10 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M12 5l-4 4M12 5l4 4M12 19l-4-4M12 19l4-4" /></svg>
           )}
           {layout === "vertical" ? "แนวนอน" : "แนวตั้ง"}
-        </button>
+        </button>}
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: 40, background: "#f9fafb" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: compact ? 12 : 40, background: "#f9fafb" }}>
         {adding && (
           <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }} onClick={cancelForm}>
             <div onClick={e => e.stopPropagation()}
@@ -842,7 +844,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
             </div>
           </div>
         ) : layout === "vertical" ? (
-          <div id="timeline-chart" style={{ maxWidth: 1100, margin: "0 auto", padding: 24, background: "#fff", borderRadius: 12 }}>
+          <div id="timeline-chart" style={{ maxWidth: 1100, margin: "0 auto", padding: compact ? 12 : 24, background: "#fff", borderRadius: 12 }}>
             {dateGroups.map((group, i) => (
               <div key={group.date} style={{ display: "flex", gap: 16 }}>
                 {/* Connector column */}
@@ -856,7 +858,7 @@ export default function Timeline({ entries, onChange, projectName, campaigns = [
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
                     {groupByChannel(group.entries).map(cg => (
                       <ChannelGroupCard key={cg.channel + cg.entries[0].id} channel={cg.channel} entries={cg.entries} align="left"
-                        onEdit={startEdit} onRemove={removeEntry} width={240} readOnly={readOnly} />
+                        onEdit={startEdit} onRemove={removeEntry} width={compact ? "100%" : 240} readOnly={readOnly} />
                     ))}
                   </div>
                 </div>

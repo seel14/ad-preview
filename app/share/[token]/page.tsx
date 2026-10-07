@@ -255,6 +255,7 @@ export default function SharePage() {
   const [saved, setSaved] = useState<string>("");
   const [initial, setInitial] = useState("");
   const [saving, setSaving] = useState(false);
+  const [nameOpen, setNameOpen] = useState(false);
   const [view, setView] = useState<"chart" | "list">("chart");
   const [platformId, setPlatformId] = useState("");
 
@@ -339,7 +340,7 @@ export default function SharePage() {
   const slideScale = Math.min(1, (vw - 32) / 960);
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-28">
+    <main className={`min-h-screen bg-slate-50 ${mobile ? "pb-20" : "pb-28"}`}>
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -431,16 +432,33 @@ export default function SharePage() {
       </div>
 
       {editable && <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="ชื่อของคุณ (ไม่บังคับ)"
-            className="sm:w-56 text-sm border border-slate-200 rounded-lg px-3 py-2" />
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-2 sm:gap-3">
+          {!mobile && (
+            <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="ชื่อของคุณ (ไม่บังคับ)"
+              className="w-56 text-sm border border-slate-200 rounded-lg px-3 py-2" />
+          )}
           <div className="flex-1 text-xs text-slate-500 min-h-4">{dirty ? "มีการแก้ไขที่ยังไม่ได้บันทึก" : saved}</div>
-          <button onClick={save} disabled={!dirty || saving}
-            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 disabled:bg-slate-300">
+          <button onClick={() => (mobile ? setNameOpen(true) : save())} disabled={!dirty || saving}
+            className="px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 disabled:bg-slate-300 whitespace-nowrap">
             {saving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
           </button>
         </div>
       </div>}
+      {nameOpen && (
+        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center" style={{ background: "rgba(15,23,42,0.45)" }} onClick={() => setNameOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 flex flex-col gap-3" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+            <div className="text-base font-bold text-slate-900">ส่งการแก้ไข</div>
+            <div className="text-xs text-slate-500">ใส่ชื่อของคุณเพื่อให้ทีมงานรู้ว่าใครแก้ (ไม่บังคับ)</div>
+            <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="ชื่อของคุณ" autoFocus
+              className="text-base border border-slate-200 rounded-xl px-3 py-2.5" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setNameOpen(false)} className="px-4 py-2.5 rounded-xl text-sm text-slate-500">ยกเลิก</button>
+              <button onClick={async () => { setNameOpen(false); await save(); }} disabled={saving}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 disabled:bg-slate-300">ส่งการแก้ไข</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

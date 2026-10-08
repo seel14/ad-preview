@@ -674,7 +674,8 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
 }
 
 // ── Platform node ──────────────────────────────────────────────────────────────
-function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
+function PlatformNode({ node, loadedAds, onUpdate, onRemove, groupMode }: {
+  groupMode: "auto" | "on" | "off";
   node: StructureNode; loadedAds: AdData[];
   onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
 }) {
@@ -713,15 +714,14 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
         {!exporting && <button onClick={onRemove} style={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       </div>
 
-      {campaigns.length > 0 && (
-        <>
-          <VertBar />
+      {campaigns.length > 0 && (() => {
+        const row = (list: StructureNode[]) => (
           <div style={{ display: "flex" }}>
-            {campaigns.map((campaign, i) => {
+            {list.map((campaign, i) => {
               const { containerProps: cpCP, dropProps: cpDP } = campaignDragProps(campaign);
               return (
                 <div key={campaign.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <ChildConnector isFirst={i === 0} isLast={i === campaigns.length - 1} single={campaigns.length === 1} />
+                  <ChildConnector isFirst={i === 0} isLast={i === list.length - 1} single={list.length === 1} />
                   <div style={{ paddingLeft: 12, paddingRight: 12 }}>
                     <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds} showKeywords={/google/i.test(node.name)}
                       onUpdate={p => updateChild(campaign.id, p)} onRemove={() => removeChild(campaign.id)}
@@ -732,8 +732,39 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
               );
             })}
           </div>
-        </>
-      )}
+        );
+
+        // Many campaigns: one lane per objective, wrapped into rows of at most 5 so the chart stays readable.
+        const keyOf = (c: StructureNode) => c.meta?.objective?.trim() || "";
+        const keys = [...new Set(campaigns.map(keyOf))];
+        const grouped = groupMode === "on" || (groupMode === "auto" && campaigns.length > 6 && keys.length > 1);
+        if (!grouped) return (<><VertBar />{row(campaigns)}</>);
+
+        const PER_ROW = 5;
+        return (
+          <>
+            <VertBar />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 22 }}>
+              {keys.map(key => {
+                const list = campaigns.filter(c => keyOf(c) === key);
+                const rows: StructureNode[][] = [];
+                for (let k = 0; k < list.length; k += PER_ROW) rows.push(list.slice(k, k + PER_ROW));
+                return (
+                  <div key={key || "__none"} style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 18px 18px", background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 16 }}>
+                    <div style={{ background: theme.campaign, color: "#fff", fontSize: 12, fontWeight: 800, padding: "5px 16px", borderRadius: 9999, whiteSpace: "nowrap" }}>
+                      {key || "ไม่ระบุ Objective"} <span style={{ opacity: 0.7, fontWeight: 600 }}>· {list.length} Campaign</span>
+                    </div>
+                    <VertBar height={14} />
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+                      {rows.map((r, ri) => <div key={ri}>{row(r)}</div>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -752,6 +783,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   const [overId, setOverId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [groupMode, setGroupMode] = useState<"auto" | "on" | "off">("auto");
   const [exportOpen, setExportOpen] = useState(false);
   const [exportIds, setExportIds] = useState<Set<string>>(new Set());
   const [exportFormat, setExportFormat] = useState<"png" | "pdf">("pdf");
@@ -876,6 +908,14 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
 
             <div style={{ flex: 1 }} />
 
+            {!exporting && nodes.length > 0 && (
+              <button onClick={() => setGroupMode(m => (m === "auto" ? "on" : m === "on" ? "off" : "auto"))}
+                title="แยก Campaign เป็นแถวตาม Objective (อัตโนมัติ = แยกเมื่อมี Campaign เกิน 6 อัน)"
+                style={{ fontSize: 11, fontWeight: 600, padding: "6px 10px", borderRadius: 6, cursor: "pointer", border: "1.5px solid #e2e8f0", background: groupMode === "on" ? "#eff6ff" : "#fff", color: groupMode === "on" ? "#1e40af" : "#64748b" }}>
+                แยกตาม Objective: {groupMode === "auto" ? "อัตโนมัติ" : groupMode === "on" ? "เปิด" : "ปิด"}
+              </button>
+            )}
+
             {/* Zoom controls */}
             {!exporting && (
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -974,7 +1014,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
               <div id="structure-chart" style={{ display: "inline-block", padding: 40 }}>
                 {!activePlatform
                   ? <div style={{ textAlign: "center", color: "#9ca3af", padding: 60, fontSize: 14 }}>กด <strong>+ Platform</strong> เพื่อเริ่มสร้าง Ads Structure</div>
-                  : <PlatformNode node={activePlatform} loadedAds={loadedAds}
+                  : <PlatformNode node={activePlatform} loadedAds={loadedAds} groupMode={groupMode}
                       onUpdate={p => updateNode(activePlatform.id, p)} onRemove={() => removeNode(activePlatform.id)} />}
               </div>
             </div>

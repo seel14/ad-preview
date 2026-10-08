@@ -10,6 +10,7 @@ import { useFacebookBrowser, type FbAd } from "./hooks/useFacebookBrowser";
 import ShareManager from "./components/ShareManager";
 import CustomAdsModal, { type CustomAd } from "./components/CustomAdsModal";
 import ConnectionsModal, { type ConnectionInfo } from "./components/ConnectionsModal";
+import FbStructureImportModal from "./components/FbStructureImportModal";
 import { normalizeCreative } from "@/lib/normalizeCreative";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
@@ -340,6 +341,7 @@ export default function Home() {
   const [coverOpen, setCoverOpen] = useState(false);
   const [connections, setConnections] = useState<ConnectionInfo[]>([]);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [fbImportOpen, setFbImportOpen] = useState(false);
   const connectionId = currentProject?.connectionId && connections.some(c => c.id === currentProject.connectionId) ? currentProject.connectionId : "";
   // Either a saved Connection (token kept on the server) or a token pasted into the project.
   const hasAuth = !!connectionId || !!token.trim();
@@ -637,6 +639,27 @@ export default function Home() {
   // Structure
   async function handleStructureChange(nodes: StructureNode[]) {
     await patchProject({ structure: nodes });
+  }
+
+  // Adds (or refreshes, matched by Facebook id) imported campaigns under the "Facebook Ads" platform.
+  async function importFbStructure(nodes: StructureNode[], mode: "merge" | "replace") {
+    const id8 = () => Math.random().toString(36).slice(2, 10);
+    const existing = structureNodes.find(n => n.name === "Facebook Ads");
+    const platform: StructureNode = existing ?? { id: id8(), type: "platform", name: "Facebook Ads", children: [] };
+    const children = mode === "replace" ? [] : [...platform.children];
+    for (const c of nodes) {
+      const idx = children.findIndex(e => e.meta?.fbId && e.meta.fbId === c.meta?.fbId);
+      if (idx >= 0) children[idx] = { ...c, id: children[idx].id };
+      else children.push(c);
+    }
+    const updated: StructureNode = { ...platform, children };
+    await patchProject({ structure: existing ? structureNodes.map(n => (n.id === existing.id ? updated : n)) : [...structureNodes, updated] });
+    setActivePlatformId(updated.id);
+    setFbImportOpen(false);
+    const adsetCount = nodes.reduce((n, c) => n + c.children.length, 0);
+    const adCount = nodes.reduce((n, c) => n + c.children.reduce((m, s) => m + s.children.length, 0), 0);
+    setStatusMsg(`✅ นำเข้า ${nodes.length} Campaign, ${adsetCount} Ad Set, ${adCount} Ad จาก Facebook แล้ว`);
+    setTimeout(() => setStatusMsg(""), 5000);
   }
 
   async function handleTimelineChange(entries: TimelineEntry[]) {
@@ -1769,6 +1792,7 @@ export default function Home() {
                 exporting={structureExporting}
                 activePlatformId={activePlatformId}
                 onActivePlatformChange={setActivePlatformId}
+                onImportFb={fbConnected ? () => setFbImportOpen(true) : undefined}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
@@ -1941,6 +1965,11 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {fbImportOpen && (
+        <FbStructureImportModal accounts={fbAdAccounts} accountId={fbSelectedAccount} connectionId={connectionId}
+          onAccountChange={v => { setFbSelectedAccount(v); if (currentProject) patchProject({ fbAccountId: v }); }}
+          onImport={importFbStructure} onClose={() => setFbImportOpen(false)} />
+      )}
       {connectionsOpen && (
         <ConnectionsModal connections={connections} onChange={setConnections} onClose={() => setConnectionsOpen(false)}
           usage={projects.reduce<Record<string, string[]>>((acc, p) => { if (p.connectionId) (acc[p.connectionId] ??= []).push(p.name); return acc; }, {})} />

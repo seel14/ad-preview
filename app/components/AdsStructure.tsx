@@ -739,7 +739,8 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove }: {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
-export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false, autoFitMin = 0.25 }: {
+export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false, autoFitMin = 0.25, onImportFb }: {
+  onImportFb?: () => void;
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
   loadedAds: AdData[];
   savedLists?: { id: string; name: string; adIds: string[]; createdAt: number }[];
@@ -854,6 +855,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0, flexWrap: "wrap" }}>
             <button onClick={addPlatform} style={toolBtn("#2563eb")}>+ Platform</button>
+            {onImportFb && !hideExport && <button onClick={onImportFb} style={{ ...toolBtn("#1877f2"), background: "#fff", color: "#1877f2", border: "1.5px solid #bfdbfe" }} title="ดึง Campaign / Ad Set / Ad จาก Facebook มาสร้าง Structure">↓ นำเข้าจาก Facebook</button>}
 
             {/* Platform tabs — one platform is edited/viewed at a time */}
             {!exporting && nodes.length > 0 && (

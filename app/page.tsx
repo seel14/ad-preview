@@ -641,10 +641,10 @@ export default function Home() {
     await patchProject({ structure: nodes });
   }
 
-  // Adds (or refreshes, matched by Facebook id) imported campaigns under the "Facebook Ads" platform.
-  async function importFbStructure(nodes: StructureNode[], mode: "merge" | "replace") {
+  // Adds (or refreshes, matched by Facebook id) imported campaigns in the chosen platform tab ("new" creates one).
+  async function importFbStructure(nodes: StructureNode[], mode: "merge" | "replace", platformId: string) {
     const id8 = () => Math.random().toString(36).slice(2, 10);
-    const existing = structureNodes.find(n => n.name === "Facebook Ads");
+    const existing = platformId === "new" ? undefined : structureNodes.find(n => n.id === platformId);
     const platform: StructureNode = existing ?? { id: id8(), type: "platform", name: "Facebook Ads", children: [] };
     const children = mode === "replace" ? [] : [...platform.children];
     for (const c of nodes) {
@@ -1967,6 +1967,7 @@ export default function Home() {
       </div>
       {fbImportOpen && (
         <FbStructureImportModal accounts={fbAdAccounts} accountId={fbSelectedAccount} connectionId={connectionId}
+          platforms={structureNodes.map(n => ({ id: n.id, name: n.name }))} defaultPlatformId={activePlatformId || structureNodes[0]?.id || "new"}
           onAccountChange={v => { setFbSelectedAccount(v); if (currentProject) patchProject({ fbAccountId: v }); }}
           onImport={importFbStructure} onClose={() => setFbImportOpen(false)} />
       )}

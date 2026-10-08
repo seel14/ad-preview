@@ -28,7 +28,7 @@ export async function listCampaigns(accountId: string, token: string): Promise<C
 }
 
 // Campaign → Ad Set → Ad names (and budgets) of the chosen campaigns, as Ads Structure nodes.
-export async function getCampaignStructure(accountId: string, campaignIds: string[], token: string): Promise<StructureNode[]> {
+export async function getCampaignStructure(accountId: string, campaignIds: string[], token: string, includeInactive = false): Promise<StructureNode[]> {
   const ids = [...new Set(campaignIds)].filter(x => /^\d+$/.test(x));
   if (!ids.length) return [];
   const filtering = encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: ids }]));
@@ -41,10 +41,11 @@ export async function getCampaignStructure(accountId: string, campaignIds: strin
   } catch { /* cosmetic */ }
   const money = (minor?: string) => minor ? String(Number(minor) / (ZERO_DECIMAL.has(currency) ? 1 : 100)) : "";
 
+  const onlyActive = includeInactive ? "" : `&effective_status=${encodeURIComponent('["ACTIVE"]')}`;
   const [campaigns, adsets, ads] = await Promise.all([
     pages(`${BASE}/${act(accountId)}/campaigns?fields=${encodeURIComponent("id,name,effective_status,objective,daily_budget,lifetime_budget")}&filtering=${filtering}&limit=200&access_token=${token}`),
-    pages(`${BASE}/${act(accountId)}/adsets?fields=${encodeURIComponent("id,name,effective_status,campaign_id,daily_budget,lifetime_budget")}&filtering=${filtering}&limit=200&access_token=${token}`),
-    pages(`${BASE}/${act(accountId)}/ads?fields=${encodeURIComponent("id,name,effective_status,adset_id,campaign_id,creative{thumbnail_url,image_url}")}&filtering=${filtering}&limit=200&access_token=${token}`),
+    pages(`${BASE}/${act(accountId)}/adsets?fields=${encodeURIComponent("id,name,effective_status,campaign_id,daily_budget,lifetime_budget")}&filtering=${filtering}${onlyActive}&limit=200&access_token=${token}`),
+    pages(`${BASE}/${act(accountId)}/ads?fields=${encodeURIComponent("id,name,effective_status,adset_id,campaign_id,creative{thumbnail_url,image_url}")}&filtering=${filtering}${onlyActive}&limit=200&access_token=${token}`),
   ]);
 
   const budgetMeta = (n: Json): Record<string, string> => {
@@ -64,10 +65,10 @@ export async function getCampaignStructure(accountId: string, campaignIds: strin
     .map(c => ({
       id: uid(), type: "campaign" as const, name: c.name ?? "",
       meta: { ...budgetMeta(c), fbId: c.id, fbStatus: c.effective_status ?? "", ...(c.objective ? { objective: titleCase(String(c.objective).replace(/^OUTCOME_/, "")) } : {}) },
-      children: adsets.filter(s => s.campaign_id === c.id).map(s => ({
+      children: adsets.filter(s => s.campaign_id === c.id && (includeInactive || s.effective_status === "ACTIVE")).map(s => ({
         id: uid(), type: "adset" as const, name: s.name ?? "",
         meta: { ...budgetMeta(s), fbId: s.id, fbStatus: s.effective_status ?? "" },
-        children: ads.filter(a => a.adset_id === s.id).map(adNode),
+        children: ads.filter(a => a.adset_id === s.id && (includeInactive || a.effective_status === "ACTIVE")).map(adNode),
       })),
     }));
 }

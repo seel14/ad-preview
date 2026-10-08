@@ -11,12 +11,14 @@ const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
   PAUSED: { bg: "#fef3c7", fg: "#92400e" },
 };
 
-export default function FbStructureImportModal({ accounts, accountId, onAccountChange, connectionId, onImport, onClose }: {
+export default function FbStructureImportModal({ accounts, accountId, onAccountChange, connectionId, platforms, defaultPlatformId, onImport, onClose }: {
+  platforms: { id: string; name: string }[];
+  defaultPlatformId: string;
   accounts: Account[];
   accountId: string;
   onAccountChange: (id: string) => void;
   connectionId: string;
-  onImport: (nodes: StructureNode[], mode: "merge" | "replace") => void;
+  onImport: (nodes: StructureNode[], mode: "merge" | "replace", platformId: string) => void;
   onClose: () => void;
 }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -24,6 +26,8 @@ export default function FbStructureImportModal({ accounts, accountId, onAccountC
   const [query, setQuery] = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
   const [mode, setMode] = useState<"merge" | "replace">("merge");
+  const [platformId, setPlatformId] = useState(defaultPlatformId || (platforms[0]?.id ?? "new"));
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
@@ -52,11 +56,11 @@ export default function FbStructureImportModal({ accounts, accountId, onAccountC
     try {
       const r = await fetch("/api/facebook/structure", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "structure", accountId, campaignIds: [...selected], ...(connectionId ? { connectionId } : {}) }),
+        body: JSON.stringify({ action: "structure", accountId, campaignIds: [...selected], includeInactive, ...(connectionId ? { connectionId } : {}) }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error ?? "ดึง Structure ไม่สำเร็จ");
-      onImport(d as StructureNode[], mode);
+      onImport(d as StructureNode[], mode, platformId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "ดึง Structure ไม่สำเร็จ");
       setImporting(false);
@@ -114,12 +118,22 @@ export default function FbStructureImportModal({ accounts, accountId, onAccountC
         </div>
 
         <div style={{ padding: "12px 20px 16px", borderTop: "1px solid #f1f5f9", background: "#f8fafc", borderRadius: "0 0 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 11, color: "#475569" }}>
+            <span>นำเข้าไปที่แท็บ:</span>
+            <select value={platformId} onChange={e => setPlatformId(e.target.value)} style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 8px", background: "#fff" }}>
+              {platforms.map((p, i) => <option key={p.id} value={p.id}>แท็บที่ {i + 1}: {p.name}</option>)}
+              <option value="new">＋ สร้างแท็บใหม่ (Facebook Ads)</option>
+            </select>
+            <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer", marginLeft: "auto" }}>
+              <input type="checkbox" checked={includeInactive} onChange={e => setIncludeInactive(e.target.checked)} /> รวม Ad Set / Ad ที่ไม่ได้ Active
+            </label>
+          </div>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: "#475569" }}>
             <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
-              <input type="radio" checked={mode === "merge"} onChange={() => setMode("merge")} /> เพิ่ม/อัปเดตเข้ากับ Facebook Ads เดิม
+              <input type="radio" checked={mode === "merge"} onChange={() => setMode("merge")} /> เพิ่ม/อัปเดตต่อจากของเดิมในแท็บนี้
             </label>
             <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
-              <input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> แทนที่ Facebook Ads ทั้งหมด
+              <input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /> แทนที่ทั้งแท็บ
             </label>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

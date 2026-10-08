@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   try {
     if (body?.action === "structure") {
       const ids: string[] = Array.isArray(body.campaignIds) ? body.campaignIds.filter((x: unknown) => typeof x === "string") : [];
-      return NextResponse.json(await getCampaignStructure(accountId, ids, token));
+      return NextResponse.json(await getCampaignStructure(accountId, ids, token, !!body.includeInactive));
     }
     return NextResponse.json(await listCampaigns(accountId, token));
   } catch (e) {

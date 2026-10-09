@@ -55,7 +55,6 @@ function getThumb(ad: AdData): string {
 
 // Thumbnail that survives hosts without CORS headers (video thumbs): direct → same-origin proxy → placeholder.
 function SafeImg({ src, style, draggable }: { src: string; style?: React.CSSProperties; draggable?: boolean }) {
-  const exporting = useContext(ExportCtx);
   const [stage, setStage] = useState<0 | 1 | 2>(0);
   useEffect(() => { setStage(0); }, [src]);
   if (stage === 2) {
@@ -68,8 +67,8 @@ function SafeImg({ src, style, draggable }: { src: string; style?: React.CSSProp
   const proxied = `/api/proxy?url=${encodeURIComponent(src)}`;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={exporting || stage === 1 ? proxied : src} alt="" draggable={draggable} crossOrigin="anonymous" style={style}
-      onError={() => setStage(st => (st === 0 && !exporting ? 1 : 2))} />
+    <img src={stage === 1 ? proxied : src} alt="" draggable={draggable} crossOrigin="anonymous" style={style}
+      onError={() => setStage(st => (st === 0 ? 1 : 2))} />
   );
 }
 

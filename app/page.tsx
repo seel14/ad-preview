@@ -280,7 +280,10 @@ function addGridPage(pdf: PdfDoc, title: string, cards: { canvas: HTMLCanvasElem
 async function captureStructureChartCanvas(html2canvas: (typeof import("html2canvas-pro"))["default"]) {
   const el = document.getElementById("structure-chart");
   if (!el) return null;
-  return html2canvas(el, { scale: 2, backgroundColor: "#f9fafb", useCORS: true });
+  // Large structures have hundreds of thumbnails: wait for them all before capturing.
+  await Promise.all([...el.querySelectorAll("img")].map(img =>
+    img.complete ? null : new Promise<void>(resolve => { img.onload = img.onerror = () => resolve(); setTimeout(resolve, 20000); })));
+  return html2canvas(el, { scale: 2, backgroundColor: "#f9fafb", useCORS: true, imageTimeout: 30000 });
 }
 
 // The ordered list of things a combined PDF export can contain. One orchestrator

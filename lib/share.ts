@@ -86,7 +86,7 @@ function indexTree(nodes: StructureNode[]): Map<string, Indexed> {
   return map;
 }
 
-const META_LABELS: Record<string, string> = { budget: "Budget", budgetPeriod: "Budget period" };
+const META_LABELS: Record<string, string> = { budget: "Budget", budgetPeriod: "Budget period", contextHint: "Context Hint" };
 
 export function diffStructure(base: StructureNode[], draft: StructureNode[]): ShareChange[] {
   const a = indexTree(base);
@@ -112,7 +112,7 @@ export function diffStructure(base: StructureNode[], draft: StructureNode[]): Sh
     if (was.parentId !== now.parentId) {
       out.push({ area: "structure", action: "moved", path: now.path, from: was.path, to: now.path });
     }
-    for (const key of ["budget", "budgetPeriod"]) {
+    for (const key of ["budget", "budgetPeriod", "contextHint"]) {
       const from = was.node.meta?.[key] ?? "";
       const to = now.node.meta?.[key] ?? "";
       if (from !== to) out.push({ area: "structure", action: "updated", path: now.path, field: META_LABELS[key], from, to });

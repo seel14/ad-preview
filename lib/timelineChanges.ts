@@ -69,7 +69,18 @@ const OTHER: CategoryDef[] = [
   { name: "Tracking", actions: [A("แก้การติดตาม", "text")] },
 ];
 
+const CHATGPT: CategoryDef[] = [
+  { name: "Campaign", actions: [...ACTIVE, A("สร้างใหม่", "text"), A("Duplicate", "text")] },
+  { name: "Ad Group", actions: [...ACTIVE, A("สร้างใหม่", "text"), A("ปรับ Schedule", "fromto")] },
+  { name: "Context Hint", actions: [A("เพิ่ม Context Hint", "text"), A("แก้ Context Hint", "fromto"), A("ลบ Context Hint")] },
+  { name: "Targeting", actions: [A("แก้ Location", "fromto"), A("แก้ภาษา", "fromto"), A("แก้ Audience", "text")] },
+  { name: "Budget", actions: [A("Increase", "fromto", "บาท"), A("Decrease", "fromto", "บาท")] },
+  { name: "Bidding", actions: [A("เปลี่ยน Strategy", "fromto"), A("แก้ค่า Bid", "fromto", "บาท")] },
+  { name: "Ad", actions: [...ACTIVE, A("เพิ่ม Ad ใหม่", "text"), A("เปลี่ยน Creative", "text"), A("แก้ข้อความ", "text"), A("ลบ")] },
+];
+
 export function categoriesForChannel(channel: string): CategoryDef[] {
+  if (channel === "ChatGPT") return CHATGPT;
   if (channel === "Facebook") return META;
   if (channel === "Google") return GOOGLE;
   if (channel === "TikTok") return TIKTOK;

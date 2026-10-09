@@ -21,12 +21,13 @@ export interface TimelineEntry {
   createdAt: number;
 }
 
-const CHANNEL_PRESETS = ["Facebook", "Google", "TikTok", "LINE", "Other"];
+const CHANNEL_PRESETS = ["Facebook", "Google", "TikTok", "LINE", "ChatGPT", "Other"];
 const CHANNEL_COLORS: Record<string, { bg: string; text: string }> = {
   Facebook: { bg: "#e7f0fe", text: "#1877F2" },
   Google: { bg: "#fce8e6", text: "#ea4335" },
   TikTok: { bg: "#e8e8e8", text: "#000000" },
   LINE: { bg: "#e6f7e6", text: "#06c755" },
+  ChatGPT: { bg: "#d1fae5", text: "#047857" },
 };
 function channelColor(channel: string) {
   return CHANNEL_COLORS[channel] ?? { bg: "#f1f5f9", text: "#475569" };
@@ -55,6 +56,13 @@ function ChannelIcon({ channel, size = 12 }: { channel: string; size?: number })
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="#000" style={{ flexShrink: 0 }}>
         <path d="M16.5 2h-3v13.2a2.8 2.8 0 11-2-2.68V9.4a5.9 5.9 0 105 5.85V8.2a6.9 6.9 0 004 1.28V6.4a3.9 3.9 0 01-4-3.9V2z" />
+      </svg>
+    );
+  }
+  if (channel === "ChatGPT") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#10a37f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9L12 3z" /><path d="M12 8v8M8.5 10l7 4M15.5 10l-7 4" />
       </svg>
     );
   }

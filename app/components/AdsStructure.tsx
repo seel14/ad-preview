@@ -43,6 +43,7 @@ const PLATFORM_THEMES: Record<string, { platform: string; campaign: string; adse
   "Google Ads":   { platform: "#ea4335", campaign: "#b91c1c", adset: "#fecaca", adsetText: "#7f1d1d" },
   "TikTok":       { platform: "#111827", campaign: "#374151", adset: "#d1d5db", adsetText: "#111827" },
   "Line":         { platform: "#06C755", campaign: "#15803d", adset: "#bbf7d0", adsetText: "#14532d" },
+  "ChatGPT Ads":  { platform: "#10a37f", campaign: "#0b7a5e", adset: "#c7f0e3", adsetText: "#064e3b" },
 };
 const PLATFORM_OPTIONS = Object.keys(PLATFORM_THEMES);
 const LINE_COLOR = "#d1d5db";
@@ -340,6 +341,34 @@ function KeywordList({ meta, onUpdate }: { meta?: Record<string, string>; onUpda
   );
 }
 
+// ── Context Hint (ChatGPT Ads): the sentence an ad group targets, editable in place ─────
+function ContextHint({ value, onSave, textColor }: { value: string; onSave: (v: string) => void; textColor: string }) {
+  const exporting = useContext(ExportCtx);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (exporting && !value.trim()) return null;
+  if (editing) {
+    return (
+      <div style={{ marginTop: 8, width: 250 }} onClick={e => e.stopPropagation()}>
+        <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} rows={3}
+          onBlur={() => { onSave(draft.trim()); setEditing(false); }}
+          placeholder="ประโยคที่ใช้ Targeting เช่น คนที่กำลังหาคอนโดใกล้ MRT"
+          style={{ width: "100%", fontSize: 11, lineHeight: 1.4, border: "1px solid #94a3b8", borderRadius: 6, padding: "5px 7px", color: "#0f172a", background: "#fff", resize: "vertical" }} />
+      </div>
+    );
+  }
+  return (
+    <div onClick={e => { if (exporting) return; e.stopPropagation(); setDraft(value); setEditing(true); }}
+      title={exporting ? undefined : "คลิกเพื่อแก้ Context Hint"}
+      style={{ marginTop: 8, maxWidth: 250, cursor: exporting ? "default" : "text", textAlign: "center" }}>
+      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", opacity: 0.75, color: textColor }}>Context Hint</div>
+      {value.trim()
+        ? <div style={{ fontSize: 11, fontStyle: "italic", lineHeight: 1.4, color: textColor, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>“{value.trim()}”</div>
+        : <div style={{ fontSize: 10, color: textColor, opacity: 0.6, border: "1px dashed currentColor", borderRadius: 6, padding: "3px 8px" }}>+ เพิ่ม Context Hint</div>}
+    </div>
+  );
+}
+
 // ── Thumbnail strip (shows inside Campaign/AdSet nodes) ────────────────────────
 function ThumbStrip({ thumbs, total }: { thumbs: string[]; total: number }) {
   if (total === 0) return null;
@@ -501,8 +530,9 @@ function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isO
 }
 
 // ── Adset node ─────────────────────────────────────────────────────────────────
-function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords }: {
+function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords, showContextHint }: {
   showKeywords?: boolean;
+  showContextHint?: boolean;
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
   containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -532,6 +562,7 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps,
             <BudgetRow meta={node.meta} onUpdate={m => onUpdate({ meta: m })} textColor={theme.adsetText} />
             <ThumbStrip thumbs={adThumbs} total={ads.length} />
             {showKeywords && <KeywordList meta={node.meta} onUpdate={m => onUpdate({ meta: m })} />}
+            {showContextHint && <ContextHint value={node.meta?.contextHint ?? ""} onSave={v => onUpdate({ meta: { ...(node.meta ?? {}), contextHint: v } })} textColor={theme.adsetText} />}
           </>
         }>
         <AddAdButton existingAdIds={existingAdIds} loadedAds={loadedAds} onAdd={addAd} />
@@ -568,8 +599,9 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps,
 }
 
 // ── Campaign node ──────────────────────────────────────────────────────────────
-function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords }: {
+function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps, dropProps, isDraggingThis, isOver, showKeywords, showContextHint }: {
   showKeywords?: boolean;
+  showContextHint?: boolean;
   node: StructureNode; theme: typeof PLATFORM_THEMES["Facebook Ads"];
   loadedAds: AdData[]; onUpdate: (p: Partial<StructureNode>) => void; onRemove: () => void;
   containerProps: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
@@ -642,7 +674,7 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
                 <div key={adset.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                   <ChildConnector isFirst={i === 0} isLast={i === adsets.length - 1} single={adsets.length === 1} />
                   <div style={{ paddingLeft: 8, paddingRight: 8 }}>
-                    <AdsetNode node={adset} theme={theme} loadedAds={loadedAds} showKeywords={showKeywords}
+                    <AdsetNode node={adset} theme={theme} loadedAds={loadedAds} showKeywords={showKeywords} showContextHint={showContextHint}
                       onUpdate={p => updateChild(adset.id, p)} onRemove={() => removeChild(adset.id)}
                       containerProps={asCP} dropProps={asDP}
                       isDraggingThis={adsetIsDragging(adset.id)} isOver={adsetIsOver(adset.id)} />
@@ -722,7 +754,7 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove, groupMode }: {
                 <div key={campaign.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                   <ChildConnector isFirst={i === 0} isLast={i === list.length - 1} single={list.length === 1} />
                   <div style={{ paddingLeft: 12, paddingRight: 12 }}>
-                    <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds} showKeywords={/google/i.test(node.name)}
+                    <CampaignNode node={campaign} theme={theme} loadedAds={loadedAds} showKeywords={/google/i.test(node.name)} showContextHint={/chatgpt/i.test(node.name)}
                       onUpdate={p => updateChild(campaign.id, p)} onRemove={() => removeChild(campaign.id)}
                       containerProps={cpCP} dropProps={cpDP}
                       isDraggingThis={campaignIsDragging(campaign.id)} isOver={campaignIsOver(campaign.id)} />

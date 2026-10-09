@@ -277,13 +277,52 @@ function addGridPage(pdf: PdfDoc, title: string, cards: { canvas: HTMLCanvasElem
 // Captures whichever platform is currently active in Ads Structure (#structure-chart
 // only ever renders one platform at a time) — shared by the standalone PNG export
 // and the "structure" section of renderSectionsToPdf.
+// Swaps every thumbnail inside `root` for an inline copy (fetched through the same-origin proxy, a few at a time)
+// so html2canvas never has to download hundreds of remote images itself. Returns a function that restores the originals.
+async function inlineImages(root: HTMLElement): Promise<() => void> {
+  const imgs = [...root.querySelectorAll("img")].filter(i => i.src && !i.src.startsWith("data:"));
+  const unique = [...new Set(imgs.map(i => i.src))];
+  const data = new Map<string, string>();
+  const proxyPrefix = `${window.location.origin}/api/proxy`;
+  let next = 0;
+  const worker = async () => {
+    while (next < unique.length) {
+      const src = unique[next++];
+      try {
+        const res = await fetch(src.startsWith(proxyPrefix) ? src : `/api/proxy?url=${encodeURIComponent(src)}`);
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        if (!blob.type.startsWith("image/")) continue;
+        data.set(src, await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result));
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        }));
+      } catch { /* keep the original image */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, unique.length) }, worker));
+  const originals: [HTMLImageElement, string][] = [];
+  for (const img of imgs) {
+    const d = data.get(img.src);
+    if (d) { originals.push([img, img.src]); img.src = d; }
+  }
+  await Promise.all(originals.map(([img]) => (img.decode ? img.decode().catch(() => {}) : null)));
+  return () => { for (const [img, src] of originals) img.src = src; };
+}
+
 async function captureStructureChartCanvas(html2canvas: (typeof import("html2canvas-pro"))["default"]) {
   const el = document.getElementById("structure-chart");
   if (!el) return null;
-  // Large structures have hundreds of thumbnails: wait for them all before capturing.
-  await Promise.all([...el.querySelectorAll("img")].map(img =>
-    img.complete ? null : new Promise<void>(resolve => { img.onload = img.onerror = () => resolve(); setTimeout(resolve, 20000); })));
-  return html2canvas(el, { scale: 2, backgroundColor: "#f9fafb", useCORS: true, imageTimeout: 30000 });
+  // Keep the bitmap within what browsers can draw reliably (huge structures made 9900x5900px images and 175MB PDFs).
+  const scale = Math.min(2, 8192 / Math.max(el.scrollWidth, el.scrollHeight));
+  const restore = await inlineImages(el);
+  try {
+    return await html2canvas(el, { scale, backgroundColor: "#f9fafb", useCORS: true, imageTimeout: 30000 });
+  } finally {
+    restore();
+  }
 }
 
 // The ordered list of things a combined PDF export can contain. One orchestrator
@@ -861,7 +900,7 @@ export default function Home() {
           const imgW = canvas.width, imgH = canvas.height;
           const ratio = Math.min(pw / imgW, ph / imgH);
           const w = imgW * ratio, h = imgH * ratio;
-          pdf.addImage(canvas.toDataURL("image/png"), "PNG", (pw - w) / 2, (ph - h) / 2, w, h);
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.9), "JPEG", (pw - w) / 2, (ph - h) / 2, w, h);
         }
         if (!first) {
           const fileName = exportFileName("Structure", "pdf");

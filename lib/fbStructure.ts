@@ -56,19 +56,31 @@ export async function getCampaignStructure(accountId: string, campaignIds: strin
 
   // Creatives store their picture in different places depending on the format.
   const pickThumb = (c: Json): string =>
-    c?.image_url
-    ?? c?.thumbnail_url
-    ?? c?.object_story_spec?.link_data?.picture
-    ?? c?.object_story_spec?.link_data?.child_attachments?.[0]?.picture
+    c?.object_story_spec?.link_data?.picture
     ?? c?.object_story_spec?.video_data?.image_url
+    ?? c?.image_url
+    ?? c?.thumbnail_url
+    ?? c?.object_story_spec?.link_data?.child_attachments?.[0]?.picture
     ?? c?.asset_feed_spec?.images?.[0]?.url
     ?? c?.asset_feed_spec?.videos?.[0]?.thumbnail_url
     ?? "";
 
+  // Same lookup the Ad Preview tab uses (direct ad nodes) — it finds a picture for formats the list edge leaves empty.
+  const nodeCreatives = new Map<string, Json>();
+  const adIdList = ads.map(a => a.id as string);
+  for (let k = 0; k < adIdList.length; k += 40) {
+    try {
+      const r = await fetch(`${BASE}/?ids=${adIdList.slice(k, k + 40).join(",")}&fields=${encodeURIComponent("creative.thumbnail_width(480).thumbnail_height(480){thumbnail_url,image_url,effective_object_story_id,object_story_spec{link_data{picture,child_attachments{picture}},video_data{image_url}},asset_feed_spec}")}&access_token=${token}`);
+      const d = await r.json();
+      if (!d?.error) for (const [aid, v] of Object.entries<Json>(d)) if (v?.creative) nodeCreatives.set(aid, v.creative);
+    } catch { /* fall back to the list edge */ }
+  }
+  const creativeOf = (a: Json): Json => nodeCreatives.get(a.id) ?? a.creative;
+
   // Ads that boost an existing post: fall back to the post's own picture (best effort — needs page access).
   const postPictures = new Map<string, string>();
-  const needPost = ads.filter(a => !pickThumb(a.creative) && a.creative?.effective_object_story_id);
-  const storyIds = [...new Set(needPost.map(a => a.creative.effective_object_story_id as string))];
+  const needPost = ads.filter(a => !pickThumb(creativeOf(a)) && creativeOf(a)?.effective_object_story_id);
+  const storyIds = [...new Set(needPost.map(a => creativeOf(a).effective_object_story_id as string))];
   for (let k = 0; k < storyIds.length; k += 40) {
     try {
       const r = await fetch(`${BASE}/?ids=${storyIds.slice(k, k + 40).join(",")}&fields=full_picture&access_token=${token}`);
@@ -79,7 +91,7 @@ export async function getCampaignStructure(accountId: string, campaignIds: strin
 
   const adNode = (a: Json): StructureNode => ({
     id: uid(), type: "ad", name: a.name ?? "", children: [],
-    meta: { adId: a.id, fbStatus: a.effective_status ?? "", thumbnailUrl: pickThumb(a.creative) || postPictures.get(a.creative?.effective_object_story_id) || "" },
+    meta: { adId: a.id, fbStatus: a.effective_status ?? "", thumbnailUrl: pickThumb(creativeOf(a)) || postPictures.get(creativeOf(a)?.effective_object_story_id) || "" },
   });
 
   return ids

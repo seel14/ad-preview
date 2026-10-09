@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import PreviewNotice from "../../components/PreviewNotice";
 import AdsStructure, { type StructureNode } from "../../components/AdsStructure";
 import { TargetSlide } from "../../components/TargetView";
 import Timeline, { type TimelineEntry } from "../../components/Timeline";
@@ -13,6 +14,7 @@ interface ShareAd {
   name: string;
   creative?: RawCreative;
   previewHtml?: string | null;
+  previewIssue?: "story_unavailable" | null;
 }
 interface AdEdit { body?: string; headline?: string; description?: string }
 type AdEdits = Record<string, AdEdit>;
@@ -193,7 +195,9 @@ function AdCard({ ad, edit, onEdit }: { ad: ShareAd; edit?: AdEdit; onEdit: (e: 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
       <div className="bg-slate-100 flex justify-center">
-        {iframeSrc ? (
+        {ad.previewIssue === "story_unavailable" ? (
+          <PreviewNotice compact />
+        ) : iframeSrc ? (
           <iframe src={iframeSrc} title={ad.name} className="w-full max-w-[360px] border-0" style={{ height: 560 }} scrolling="no" />
         ) : orig.image ? (
           // eslint-disable-next-line @next/next/no-img-element

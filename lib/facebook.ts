@@ -65,6 +65,7 @@ export interface AdPreview {
   creative: CreativeShape;
   albumImages: string[];
   previewHtml: string | null;
+  previewIssue?: "story_unavailable" | null;
   shareLink: string | null;
   page: { name: string; picture: string } | null;
 }
@@ -194,6 +195,19 @@ export async function getAdPreview(adId: string, token: string): Promise<AdPrevi
     pageId ? graphFetch<{ name?: string; picture?: { data?: { url?: string } } }>(`${BASE}/${pageId}?fields=name,picture{url}&access_token=${token}`).catch(() => null) : null,
   ]);
 
+  // The preview is an iframe from Facebook; when the token cannot see the page post behind the ad it renders an error page.
+  let previewIssue: "story_unavailable" | null = null;
+  const previewSrc = preview.data?.[0]?.body?.match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&");
+  if (previewSrc) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const html = await (await fetch(previewSrc, { signal: ctrl.signal })).text();
+      clearTimeout(timer);
+      if (/Story Unavailable|unavailable for preview/i.test(html)) previewIssue = "story_unavailable";
+    } catch { /* leave the preview as is */ }
+  }
+
   return {
     id: ad.id,
     name: ad.name,
@@ -203,6 +217,7 @@ export async function getAdPreview(adId: string, token: string): Promise<AdPrevi
     creative,
     albumImages,
     previewHtml: preview.data?.[0]?.body ?? null,
+    previewIssue,
     shareLink: (ad.preview_shareable_link as string | undefined) ?? preview.data?.[0]?.body?.match(/src="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null,
     page: page ? { name: page.name ?? "", picture: page.picture?.data?.url ?? "" } : null,
   };

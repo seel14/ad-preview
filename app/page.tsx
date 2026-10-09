@@ -36,6 +36,7 @@ interface AdData {
     };
   };
   previewHtml: string | null;
+  previewIssue?: "story_unavailable" | null;
   shareLink?: string | null;
   albumImages?: string[];
   page?: { name: string; picture: string } | null;

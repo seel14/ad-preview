@@ -1,5 +1,7 @@
 "use client";
 
+import PreviewNotice from "./PreviewNotice";
+
 import { normalizeCreative } from "@/lib/normalizeCreative";
 
 interface ChildAttachment {
@@ -35,6 +37,7 @@ interface AdData {
   };
   previewHtml: string | null;
   shareLink?: string | null;
+  previewIssue?: "story_unavailable" | null;
   page?: { name: string; picture: string } | null;
 }
 
@@ -116,6 +119,8 @@ export default function SlideView({ ad, index, exportMode = false, albumImages }
               width={320}
             />
           </div>
+        ) : ad.previewIssue === "story_unavailable" ? (
+          <PreviewNotice />
         ) : iframeSrc ? (
           <iframe
             src={iframeSrc}

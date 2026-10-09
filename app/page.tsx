@@ -11,6 +11,7 @@ import ShareManager from "./components/ShareManager";
 import CustomAdsModal, { type CustomAd } from "./components/CustomAdsModal";
 import ConnectionsModal, { type ConnectionInfo } from "./components/ConnectionsModal";
 import FbStructureImportModal from "./components/FbStructureImportModal";
+import CopyStructureModal from "./components/CopyStructureModal";
 import { normalizeCreative } from "@/lib/normalizeCreative";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
@@ -385,6 +386,7 @@ export default function Home() {
   const [connections, setConnections] = useState<ConnectionInfo[]>([]);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [fbImportOpen, setFbImportOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
   const connectionId = currentProject?.connectionId && connections.some(c => c.id === currentProject.connectionId) ? currentProject.connectionId : "";
   // Either a saved Connection (token kept on the server) or a token pasted into the project.
   const hasAuth = !!connectionId || !!token.trim();
@@ -702,6 +704,32 @@ export default function Home() {
     const adsetCount = nodes.reduce((n, c) => n + c.children.length, 0);
     const adCount = nodes.reduce((n, c) => n + c.children.reduce((m, s) => m + s.children.length, 0), 0);
     setStatusMsg(`✅ นำเข้า ${nodes.length} Campaign, ${adsetCount} Ad Set, ${adCount} Ad จาก Facebook แล้ว`);
+    setTimeout(() => setStatusMsg(""), 5000);
+  }
+
+  // Deep copy with fresh ids so the copy never shares nodes with the original.
+  function cloneStructure(nodes: StructureNode[]): StructureNode[] {
+    return nodes.map(n => ({ ...n, id: Math.random().toString(36).slice(2, 10), meta: n.meta ? { ...n.meta } : undefined, children: cloneStructure(n.children ?? []) }));
+  }
+
+  async function copyStructureTo(targetId: string, platforms: StructureNode[], mode: "append" | "replace") {
+    const target = projects.find(p => p.id === targetId);
+    if (!target) throw new Error("ไม่พบ Project ปลายทาง");
+    const next = [...(mode === "replace" ? [] : target.structure ?? []), ...cloneStructure(platforms)];
+    const r = await fetch(`/api/projects/${targetId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ structure: next }) });
+    if (!r.ok) throw new Error("บันทึกที่ Project ปลายทางไม่สำเร็จ");
+    await reloadProjects();
+    setCopyOpen(false);
+    setStatusMsg(`✅ คัดลอก ${platforms.length} แท็บไปที่ "${target.name}" แล้ว`);
+    setTimeout(() => setStatusMsg(""), 5000);
+  }
+
+  async function copyStructureFrom(platforms: StructureNode[], mode: "append" | "replace") {
+    const copies = cloneStructure(platforms);
+    await patchProject({ structure: [...(mode === "replace" ? [] : structureNodes), ...copies] });
+    if (copies[0]) setActivePlatformId(copies[0].id);
+    setCopyOpen(false);
+    setStatusMsg(`✅ คัดลอก ${copies.length} แท็บเข้า Project นี้แล้ว`);
     setTimeout(() => setStatusMsg(""), 5000);
   }
 
@@ -1836,6 +1864,7 @@ export default function Home() {
                 activePlatformId={activePlatformId}
                 onActivePlatformChange={setActivePlatformId}
                 onImportFb={fbConnected ? () => setFbImportOpen(true) : undefined}
+                onCopyStructure={() => setCopyOpen(true)}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center" style={{ fontSize: 13, color: "#94a3b8" }}>
@@ -2008,6 +2037,11 @@ export default function Home() {
           </aside>
         )}
       </div>
+      {copyOpen && currentProject && (
+        <CopyStructureModal currentName={currentProject.name} currentStructure={structureNodes} activePlatformId={activePlatformId}
+          others={projects.filter(p => p.id !== currentProject.id).map(p => ({ id: p.id, name: p.name, structure: p.structure }))}
+          onCopyTo={copyStructureTo} onCopyFrom={copyStructureFrom} onClose={() => setCopyOpen(false)} />
+      )}
       {fbImportOpen && (
         <FbStructureImportModal accounts={fbAdAccounts} accountId={fbSelectedAccount} connectionId={connectionId}
           platforms={structureNodes.map(n => ({ id: n.id, name: n.name }))} defaultPlatformId={activePlatformId || structureNodes[0]?.id || "new"}

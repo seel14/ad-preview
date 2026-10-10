@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { redis, getProjects } from "@/lib/redis";
+import { redis, getProjects, type StructureNode } from "@/lib/redis";
 import { listShares, saveShare, newToken, type ShareRecord, type ShareScope } from "@/lib/share";
+
+// Share snapshots must not depend on expiring Facebook image links.
+function bakeThumbs(nodes: StructureNode[], thumbs: Record<string, string>): StructureNode[] {
+  return nodes.map(n => ({
+    ...n,
+    meta: n.meta?.adId && thumbs[n.meta.adId] ? { ...n.meta, thumbnailUrl: thumbs[n.meta.adId] } : n.meta,
+    children: bakeThumbs(n.children ?? [], thumbs),
+  }));
+}
 
 // GET — all share links of the signed-in user (summary only, no heavy snapshot payload)
 export async function GET() {
@@ -51,7 +60,7 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
     base: {
-      structure: project.structure ?? [],
+      structure: bakeThumbs(project.structure ?? [], project.thumbs ?? {}),
       ads: Array.isArray(body?.ads) ? body.ads : (project.cachedAds as never[]) ?? [],
       adEdits: {},
       timeline: includeTimeline ? (project.timeline ?? []) : undefined,

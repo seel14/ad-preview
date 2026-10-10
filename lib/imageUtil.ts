@@ -1,6 +1,6 @@
 // Shrinks an image (file or remote URL, fetched through the same-origin proxy) to a small JPEG data URL so it
 // can be stored with the event and never expires like Facebook CDN links do.
-export async function toThumbDataUrl(source: File | string, maxSide = 360): Promise<string> {
+export async function toThumbDataUrl(source: File | string, maxSide = 360, quality = 0.82): Promise<string> {
   const blob = typeof source !== "string"
     ? source
     : source.startsWith("data:")
@@ -15,6 +15,6 @@ export async function toThumbDataUrl(source: File | string, maxSide = 360): Prom
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.82);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 

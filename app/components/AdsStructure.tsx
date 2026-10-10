@@ -73,6 +73,10 @@ function SafeImg({ src, style, draggable }: { src: string; style?: React.CSSProp
   );
 }
 
+// Permanent thumbnails saved with the project (ad id → data URL); they win over expiring Facebook links.
+const ThumbCtx = createContext<Record<string, string>>({});
+const thumbOf = (thumbs: Record<string, string>, node: StructureNode) => (node.meta?.adId && thumbs[node.meta.adId]) || node.meta?.thumbnailUrl || "";
+
 // ── Drag state (global within component tree) ─────────────────────────────────
 interface DragCtxType {
   dragId: string | null;
@@ -496,7 +500,8 @@ function AdCard({ node, onRemove, containerProps, dropProps, isDraggingThis, isO
   isDraggingThis: boolean; isOver: boolean;
 }) {
   const exporting = useContext(ExportCtx);
-  const thumb = node.meta?.thumbnailUrl ?? "";
+  const thumbs = useContext(ThumbCtx);
+  const thumb = thumbOf(thumbs, node);
   return (
     <div {...containerProps} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
       {!exporting && <GrabBar label="ลาก Ad" color="#9ca3af" bg="#f3f4f6" />}
@@ -549,7 +554,8 @@ function AdsetNode({ node, theme, loadedAds, onUpdate, onRemove, containerProps,
     onUpdate({ children: [...ads, { id: uid(), type: "ad", name: ad.name, meta: { adId: ad.id, thumbnailUrl: getThumb(ad) }, children: [] }] });
   }
 
-  const adThumbs = ads.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
+  const thumbsMap = useContext(ThumbCtx);
+  const adThumbs = ads.map(a => thumbOf(thumbsMap, a)).filter(Boolean);
 
   return (
     <div {...containerProps} style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: isDraggingThis ? 0.4 : 1 }}>
@@ -642,7 +648,8 @@ function CampaignNode({ node, theme, loadedAds, onUpdate, onRemove, containerPro
 
   // Adset children are always ad-typed (no overloading at that level), unlike Campaign's.
   const allAdNodes = [...adsets.flatMap(s => s.children), ...sharedAds];
-  const campThumbs = allAdNodes.map(a => a.meta?.thumbnailUrl ?? "").filter(Boolean);
+  const thumbsMap = useContext(ThumbCtx);
+  const campThumbs = allAdNodes.map(a => thumbOf(thumbsMap, a)).filter(Boolean);
   const campTotal = allAdNodes.length;
 
   return (
@@ -801,7 +808,8 @@ function PlatformNode({ node, loadedAds, onUpdate, onRemove, groupMode }: {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────────
-export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false, autoFitMin = 0.25, onImportFb, onCopyStructure }: {
+export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exporting, activePlatformId, onActivePlatformChange, hideExport = false, autoFit = false, autoFitMin = 0.25, onImportFb, onCopyStructure, thumbs = {} }: {
+  thumbs?: Record<string, string>;
   onImportFb?: () => void;
   onCopyStructure?: () => void;
   nodes: StructureNode[]; onChange: (nodes: StructureNode[]) => void;
@@ -914,6 +922,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
   const activePlatform = nodes.find(n => n.id === activePlatformId) ?? nodes[0] ?? null;
 
   return (
+    <ThumbCtx.Provider value={thumbs}>
     <DragCtx.Provider value={{ dragId, overId, setDragId, setOverId, move: (fromId, toId) => { const next = moveNode(nodes, fromId, toId); if (next) onChange(next); } }}>
       <ExportCtx.Provider value={exporting}>
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
@@ -1055,6 +1064,7 @@ export default function AdsStructure({ nodes, onChange, loadedAds, onExport, exp
         </div>
       </ExportCtx.Provider>
     </DragCtx.Provider>
+    </ThumbCtx.Provider>
   );
 }
 

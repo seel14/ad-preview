@@ -13,6 +13,7 @@ import ConnectionsModal, { type ConnectionInfo } from "./components/ConnectionsM
 import FbStructureImportModal from "./components/FbStructureImportModal";
 import CopyStructureModal from "./components/CopyStructureModal";
 import { normalizeCreative } from "@/lib/normalizeCreative";
+import { toThumbDataUrl } from "@/lib/imageUtil";
 import TargetView, { type AdsetOption, type AdsetTarget } from "./components/TargetView";
 import { useProjectPersistence, type Project, type SavedList } from "./hooks/useProjectPersistence";
 
@@ -387,6 +388,12 @@ export default function Home() {
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [fbImportOpen, setFbImportOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
+  const thumbs = currentProject?.thumbs ?? {};
+  const currentIdRef = useRef<string | null>(null);
+  const currentProjectRef = useRef<Project | null>(null);
+  currentIdRef.current = currentId;
+  currentProjectRef.current = currentProject;
+  const thumbBusy = useRef<Map<string, string>>(new Map()); // ad id → source already tried this session (in flight or failed)
   const connectionId = currentProject?.connectionId && connections.some(c => c.id === currentProject.connectionId) ? currentProject.connectionId : "";
   // Either a saved Connection (token kept on the server) or a token pasted into the project.
   const hasAuth = !!connectionId || !!token.trim();
@@ -486,6 +493,39 @@ export default function Home() {
     if (status !== "authenticated") return;
     fetch("/api/connections").then(r => (r.ok ? r.json() : [])).then(d => Array.isArray(d) && setConnections(d)).catch(() => {});
   }, [status]);
+
+  // Keep a permanent small copy of every thumbnail used in the structure (Facebook links expire after a while).
+  useEffect(() => {
+    if (!currentProject || structureNodes.length === 0) return;
+    const wanted: { id: string; src: string }[] = [];
+    const loadedImage = new Map(ads.map(a => [a.id, normalizeCreative(a.creative).image]));
+    const walk = (list: StructureNode[]) => list.forEach(n => {
+      const id = n.meta?.adId;
+      if (n.type === "ad" && id && !thumbs[id]) {
+        const src = loadedImage.get(id) || n.meta?.thumbnailUrl || "";
+        if (src && thumbBusy.current.get(id) !== src) wanted.push({ id, src });
+      }
+      walk(n.children ?? []);
+    });
+    walk(structureNodes);
+    if (!wanted.length) return;
+    wanted.forEach(w => thumbBusy.current.set(w.id, w.src));
+    const projectId = currentProject.id;
+    (async () => {
+      const found: Record<string, string> = {};
+      let next = 0;
+      const worker = async () => {
+        while (next < wanted.length) {
+          const w = wanted[next++];
+          try { found[w.id] = w.src.startsWith("data:") ? w.src : await toThumbDataUrl(w.src, 140, 0.7); } catch { /* link already expired */ }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, wanted.length) }, worker));
+      if (Object.keys(found).length && projectId === currentIdRef.current) await patchProject({ thumbs: { ...(currentProjectRef.current?.thumbs ?? {}), ...found } });
+      for (const w of wanted) if (found[w.id]) thumbBusy.current.delete(w.id); // failed sources are not retried; a fresh link (after "โหลด Ads") is
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureNodes, ads, currentId]);
 
   // Each Project remembers its own ad account: switching Project (or connecting Facebook) re-selects it.
   useEffect(() => {
@@ -709,7 +749,7 @@ export default function Home() {
 
   // Deep copy with fresh ids so the copy never shares nodes with the original.
   function cloneStructure(nodes: StructureNode[]): StructureNode[] {
-    return nodes.map(n => ({ ...n, id: Math.random().toString(36).slice(2, 10), meta: n.meta ? { ...n.meta } : undefined, children: cloneStructure(n.children ?? []) }));
+    return nodes.map(n => ({ ...n, id: Math.random().toString(36).slice(2, 10), meta: n.meta ? { ...n.meta, ...(n.meta.adId && thumbs[n.meta.adId] ? { thumbnailUrl: thumbs[n.meta.adId] } : {}) } : undefined, children: cloneStructure(n.children ?? []) }));
   }
 
   async function copyStructureTo(targetId: string, platforms: StructureNode[], mode: "append" | "replace") {
@@ -1858,6 +1898,7 @@ export default function Home() {
                 nodes={structureNodes}
                 onChange={handleStructureChange}
                 loadedAds={ads}
+                thumbs={thumbs}
                 savedLists={savedLists}
                 onExport={handleExportStructure}
                 exporting={structureExporting}

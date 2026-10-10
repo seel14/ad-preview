@@ -27,6 +27,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (typeof body.fbAccountId === "string") projects[idx].fbAccountId = body.fbAccountId;
   if (typeof body.connectionId === "string") projects[idx].connectionId = body.connectionId || undefined;
   if (Array.isArray(body.customAds)) projects[idx].customAds = body.customAds;
+  if (body.thumbs && typeof body.thumbs === "object" && !Array.isArray(body.thumbs)) projects[idx].thumbs = body.thumbs;
   projects[idx].updatedAt = Date.now();
 
   await saveProjects(session.user.partitionKey, projects);

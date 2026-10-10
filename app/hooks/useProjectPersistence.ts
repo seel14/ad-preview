@@ -25,6 +25,7 @@ export interface Project {
   cachedTargets?: unknown[];
   fbAccountId?: string;
   connectionId?: string;
+  thumbs?: Record<string, string>;
   customAds?: { id: string; name: string; image: string; caption?: string; headline?: string; link?: string; createdAt: number }[];
 }
 
